@@ -54,9 +54,6 @@ import { TubanMultiplayerClient } from './multiplayer';
 import { buildJawaWorld } from './worldBuilder';
 import { JawaAudioEngine } from './audio';
 
-const SAVE_STORAGE_KEY = 'jawa_life_save_v1';
-const CUSTOM_CHAR_STORAGE_KEY = 'tuban_life_custom_char_v1';
-
 // Pre-allocated math helpers for zero GC in render loop
 const _vec3 = new THREE.Vector3();
 const _camIdeal = new THREE.Vector3();
@@ -237,8 +234,6 @@ export class GameEngine {
     this.container = container;
     this.onHudUpdate = onHudUpdate;
 
-    const hasSave = Boolean(localStorage.getItem(SAVE_STORAGE_KEY));
-    const initialCustomChar = this.loadLocalCharacterProfile();
     this.state = {
       screen: 'menu',
       language: 'ngoko',
@@ -263,8 +258,8 @@ export class GameEngine {
       speedKmh: 0,
       outfit: 'kasual',
       ownedOutfits: ['kasual'],
-      character: initialCustomChar ?? { ...DEFAULT_CHARACTER_PROFILE },
-      hasCustomCharacter: Boolean(initialCustomChar),
+      character: { ...DEFAULT_CHARACTER_PROFILE },
+      hasCustomCharacter: false,
       inventory: structuredClone(INITIAL_INVENTORY),
       activeMissionId: 'misi_1_tangga',
       activeStepIndex: 0,
@@ -282,7 +277,6 @@ export class GameEngine {
       audioMuted: false,
       gamelanEnabled: true,
       graphicsMode: 'seimbang',
-      hasSaveData: hasSave,
     };
 
     this.initThree();
@@ -291,25 +285,6 @@ export class GameEngine {
     this.updateGpsTarget();
     this.emitHud();
     this.startLoop();
-  }
-
-  private loadLocalCharacterProfile(): CharacterProfile | null {
-    try {
-      const rawChar = localStorage.getItem(CUSTOM_CHAR_STORAGE_KEY);
-      if (rawChar) {
-        return sanitizeCharacterProfile(JSON.parse(rawChar) as Partial<CharacterProfile>);
-      }
-      const rawSave = localStorage.getItem(SAVE_STORAGE_KEY);
-      if (rawSave) {
-        const parsed = JSON.parse(rawSave) as SaveData;
-        if (parsed.character) {
-          return sanitizeCharacterProfile(parsed.character);
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return null;
   }
 
   private detectSoftwareWebGL(): boolean {
@@ -2077,6 +2052,20 @@ export class GameEngine {
     }
   }
 
+  public resetToMenuOnSignOut() {
+    if (this.currentVehicle) this.toggleVehicle();
+    this.authUid = null;
+    this.multiplayer.disconnect();
+    this.clearRemotePlayers();
+    this.state.screen = 'menu';
+    this.state.character = { ...DEFAULT_CHARACTER_PROFILE };
+    this.state.hasCustomCharacter = false;
+    this.state.activeDialogue = null;
+    this.state.activeShopId = null;
+    this.rebuildPlayerRig();
+    this.emitHud();
+  }
+
   public setCharacterProfile(
     profile: CharacterProfile,
     opts?: { persistSave?: boolean; notify?: boolean }
@@ -2084,28 +2073,14 @@ export class GameEngine {
     const clean = sanitizeCharacterProfile(profile);
     this.state.character = clean;
     this.state.hasCustomCharacter = true;
-    localStorage.setItem(CUSTOM_CHAR_STORAGE_KEY, JSON.stringify(clean));
     this.rebuildPlayerRig();
     this.multiplayer?.sendProfile(clean);
-    if (opts?.persistSave !== false) {
-      if (this.state.screen === 'playing') {
-        this.saveGame(true);
-      } else {
-        const existingRaw = localStorage.getItem(SAVE_STORAGE_KEY);
-        if (existingRaw) {
-          try {
-            const parsed = JSON.parse(existingRaw) as SaveData;
-            parsed.character = clean;
-            localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(parsed));
-          } catch {
-            // ignore corrupt local save
-          }
-        }
-      }
+    if (opts?.persistSave !== false && this.authUid) {
+      this.saveGame(true);
     }
     if (opts?.notify) {
       this.audio.playChime();
-      this.showToast(`Karakter "${clean.name}" wis disimpen!`);
+      this.showToast(`Karakter "${clean.name}" wis disimpen menyang Cloud!`);
     }
     this.emitHud();
   }
@@ -2290,6 +2265,9 @@ export class GameEngine {
     this.multiplayer.connect();
     this.updateGpsTarget();
     this.showToast(`Sugeng rawuh ing Tuban, ${this.state.character.name}!`);
+    if (this.authUid) {
+      this.saveGame(true);
+    }
     this.emitHud();
   }
 
@@ -2323,12 +2301,16 @@ export class GameEngine {
   }
 
   public saveGame(silent = false) {
+    if (!this.authUid) {
+      if (!silent) {
+        this.showToast('Masuk akun online dhisik kanggo nyimpen menyang Cloud!');
+        this.emitHud();
+      }
+      return;
+    }
     const payload = this.exportSavePayload();
-    localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
-    this.state.hasSaveData = true;
     if (!silent) {
       this.audio.playChime();
-      this.showToast('Progress game wis disimpen!');
     }
     this.onSaveListener?.(payload, silent);
     this.emitHud();
@@ -2355,7 +2337,6 @@ export class GameEngine {
     if (data.character) {
       this.state.character = sanitizeCharacterProfile(data.character);
       this.state.hasCustomCharacter = true;
-      localStorage.setItem(CUSTOM_CHAR_STORAGE_KEY, JSON.stringify(this.state.character));
     }
     this.state.inventory = data.inventory ?? structuredClone(INITIAL_INVENTORY);
     this.state.activeMissionId = data.activeMissionId ?? null;
@@ -2366,9 +2347,6 @@ export class GameEngine {
     this.state.activeDialogue = null;
     this.state.activeShopId = null;
 
-    localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(data));
-    this.state.hasSaveData = true;
-
     this.rebuildPlayerRig();
     this.multiplayer.connect();
     this.multiplayer.sendProfile(this.state.character);
@@ -2376,17 +2354,6 @@ export class GameEngine {
     this.showToast(toastText);
     this.emitHud();
     return true;
-  }
-
-  public loadGame(): boolean {
-    const raw = localStorage.getItem(SAVE_STORAGE_KEY);
-    if (!raw) return false;
-    try {
-      const data = JSON.parse(raw) as SaveData;
-      return this.applySaveData(data);
-    } catch {
-      return false;
-    }
   }
 
   public notifyToast(msg: string) {

@@ -23,7 +23,6 @@ import { UI_STRINGS, t } from '../game/jawaData';
 
 interface MainMenuProps {
   language: LanguageMode;
-  hasSaveData: boolean;
   audioMuted: boolean;
   character: CharacterProfile;
   hasCustomCharacter: boolean;
@@ -32,7 +31,6 @@ interface MainMenuProps {
   cloudStatus: CloudSyncStatus;
   cloudError: string | null;
   onNewGame: () => void;
-  onContinue: () => void;
   onContinueCloud: () => void;
   onOpenCharacterCreator: () => void;
   onCloudPinSignIn: (playerId: string, pin: string) => void;
@@ -46,7 +44,6 @@ interface MainMenuProps {
 
 export const MainMenu: React.FC<MainMenuProps> = ({
   language,
-  hasSaveData,
   audioMuted,
   character,
   hasCustomCharacter,
@@ -55,7 +52,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   cloudStatus,
   cloudError,
   onNewGame,
-  onContinue,
   onContinueCloud,
   onOpenCharacterCreator,
   onCloudPinSignIn,
@@ -104,58 +100,63 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             </p>
           </div>
 
-          {/* Primary Menu Buttons */}
+          {/* Primary Menu Buttons (Online Only) */}
           <div className="flex flex-wrap items-center gap-3 pt-1">
-            {cloudUser && cloudSavedAt && (
-              <button
-                type="button"
-                onClick={onContinueCloud}
-                className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#0c140e] font-semibold text-sm transition-colors cursor-pointer whitespace-nowrap"
-              >
-                <Cloud className="w-4 h-4" />
+            {cloudUser ? (
+              <>
+                {cloudSavedAt && (
+                  <button
+                    type="button"
+                    onClick={onContinueCloud}
+                    className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#0c140e] font-semibold text-sm transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <Cloud className="w-4 h-4" />
+                    <span>
+                      {language === 'ngoko'
+                        ? 'Lanjutke Saka Cloud Online'
+                        : language === 'krama'
+                          ? 'Lajengaken Saking Cloud Online'
+                          : 'Lanjutkan dari Cloud Online'}
+                    </span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onNewGame}
+                  className={`flex items-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer whitespace-nowrap ${
+                    cloudSavedAt
+                      ? 'bg-[#1c231f] hover:bg-[#27312b] text-[#f5f2eb] border border-white/15'
+                      : 'bg-[#d99b26] hover:bg-[#e5aa38] text-[#111311]'
+                  }`}
+                >
+                  {cloudSavedAt ? <RotateCcw className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                  <span>
+                    {cloudSavedAt
+                      ? t(UI_STRINGS.newGame, language)
+                      : language === 'indonesia'
+                        ? 'Mulai Petualangan Online'
+                        : 'Mulai Main Online'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenCharacterCreator}
+                  className="flex items-center gap-2 px-4 py-3.5 rounded-xl bg-[#1c231f] hover:bg-[#27312b] text-[#f5b942] border border-[#d99b26]/35 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{hasCustomCharacter ? `Karakter: ${character.name}` : 'Buat Karakter'}</span>
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-[#16211c] border border-emerald-500/35 text-xs sm:text-sm text-emerald-300 font-medium">
+                <Cloud className="w-4 h-4 shrink-0" />
                 <span>
-                  {language === 'ngoko'
-                    ? 'Lanjutke saka Cloud'
-                    : language === 'krama'
-                      ? 'Lajengaken saking Cloud'
-                      : 'Lanjutkan dari Cloud'}
+                  {language === 'indonesia'
+                    ? 'Masuk akun Online di bawah untuk bermain & Cloud Save.'
+                    : 'Masuk akun Online ing ngisor kanggo main & Cloud Save.'}
                 </span>
-              </button>
+              </div>
             )}
-            {hasSaveData && (
-              <button
-                type="button"
-                onClick={onContinue}
-                className={`flex items-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer whitespace-nowrap ${
-                  cloudUser && cloudSavedAt
-                    ? 'bg-[#1c231f] hover:bg-[#27312b] text-[#f5f2eb] border border-white/15'
-                    : 'bg-[#d99b26] hover:bg-[#e5aa38] text-[#111311]'
-                }`}
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span>{t(UI_STRINGS.continueGame, language)} (Lokal)</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onNewGame}
-              className={`flex items-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-sm transition-colors cursor-pointer whitespace-nowrap ${
-                hasSaveData || (cloudUser && cloudSavedAt)
-                  ? 'bg-[#1c231f] hover:bg-[#27312b] text-[#f5f2eb] border border-white/15'
-                  : 'bg-[#d99b26] hover:bg-[#e5aa38] text-[#111311]'
-              }`}
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>{t(UI_STRINGS.newGame, language)}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onOpenCharacterCreator}
-              className="flex items-center gap-2 px-4 py-3.5 rounded-xl bg-[#1c231f] hover:bg-[#27312b] text-[#f5b942] border border-[#d99b26]/35 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{hasCustomCharacter ? `Karakter: ${character.name}` : 'Buat Karakter'}</span>
-            </button>
             <button
               type="button"
               onClick={onToggleMute}

@@ -451,10 +451,11 @@ export const GameHud: React.FC<GameHudProps> = ({
                 <button
                   type="button"
                   onClick={onSaveGame}
+                  title="Simpen Progress menyang Cloud Online"
                   className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 short:py-1.5 rounded-lg hover:bg-white/10 text-xs font-medium text-[#f5f2eb] cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Save className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Simpen</span>
+                  <span>Simpen Cloud</span>
                 </button>
                 <button
                   type="button"

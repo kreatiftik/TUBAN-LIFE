@@ -227,6 +227,9 @@ export default function App() {
     setCloudError(null);
     try {
       await signOutUser();
+      setDrawerTab(null);
+      setShowCharacterCreator(false);
+      engineRef.current?.resetToMenuOnSignOut();
     } catch (err) {
       setCloudError(formatCloudError(err));
     }
@@ -235,9 +238,11 @@ export default function App() {
   const handleSaveToCloud = async () => {
     const user = cloudUserRef.current;
     const engine = engineRef.current;
-    if (!user || !engine) return;
+    if (!user || !engine) {
+      engine?.notifyToast('Masuk akun online dhisik kanggo nyimpen menyang Cloud!');
+      return;
+    }
     const payload = engine.exportSavePayload();
-    engine.saveGame(true);
     await syncPayloadToCloud(user, payload, false);
   };
 
@@ -289,7 +294,7 @@ export default function App() {
     async (profile: CharacterProfile) => {
       const currentEngine = engineRef.current;
       if (!currentEngine) return;
-      currentEngine.setCharacterProfile(profile, { persistSave: true, notify: true });
+      currentEngine.setCharacterProfile(profile, { persistSave: false, notify: true });
       setShowCharacterCreator(false);
       const user = cloudUserRef.current;
       if (user) {
@@ -311,7 +316,6 @@ export default function App() {
       {hud && hud.screen === 'menu' && (
         <MainMenu
           language={hud.language}
-          hasSaveData={hud.hasSaveData}
           audioMuted={hud.audioMuted}
           character={hud.character}
           hasCustomCharacter={hud.hasCustomCharacter}
@@ -319,10 +323,15 @@ export default function App() {
           cloudSavedAt={cloudSaveData?.savedAt ?? null}
           cloudStatus={cloudStatus}
           cloudError={cloudError}
-          onNewGame={() => engine?.startNewGame()}
-          onContinue={() => engine?.loadGame()}
+          onNewGame={() => {
+            if (!cloudUserRef.current) return;
+            engine?.startNewGame();
+          }}
           onContinueCloud={() => void handleLoadFromCloud()}
-          onOpenCharacterCreator={() => setShowCharacterCreator(true)}
+          onOpenCharacterCreator={() => {
+            if (!cloudUserRef.current) return;
+            setShowCharacterCreator(true);
+          }}
           onCloudPinSignIn={(id, pin) => void handleCloudPinSignIn(id, pin)}
           onCloudPinRegister={(id, pin) => void handleCloudPinRegister(id, pin)}
           onCloudSignIn={() => void handleCloudSignIn()}
@@ -351,7 +360,7 @@ export default function App() {
             engine?.setWeather(hud.weather === 'cerah' ? 'hujan' : 'cerah')
           }
           onToggleMute={() => engine?.setAudioMuted(!hud.audioMuted)}
-          onSaveGame={() => engine?.saveGame()}
+          onSaveGame={() => void handleSaveToCloud()}
           onPause={() => engine?.setScreen('paused')}
           onSetGps={(x, z, label) => engine?.setCustomGpsTarget(x, z, label)}
           onSendChat={(text) => engine?.sendOnlineChat(text)}
@@ -401,7 +410,6 @@ export default function App() {
           onSetGraphicsMode={(m) => engine?.setGraphicsMode(m)}
           onToggleMute={() => engine?.setAudioMuted(!hud.audioMuted)}
           onToggleGamelan={() => engine?.setGamelanEnabled(!hud.gamelanEnabled)}
-          onSaveGame={() => engine?.saveGame()}
           onCloudPinSignIn={(id, pin) => void handleCloudPinSignIn(id, pin)}
           onCloudPinRegister={(id, pin) => void handleCloudPinRegister(id, pin)}
           onCloudSignIn={() => void handleCloudSignIn()}
@@ -411,6 +419,7 @@ export default function App() {
           onOpenCharacterCreator={() => setShowCharacterCreator(true)}
           onReturnToMenu={() => {
             setDrawerTab(null);
+            engine?.saveGame(true);
             engine?.setScreen('menu');
           }}
         />
@@ -442,10 +451,10 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => engine?.saveGame()}
+                onClick={() => void handleSaveToCloud()}
                 className="w-full py-3 rounded-xl bg-[#1c231f] hover:bg-[#27312b] border border-white/10 text-[#f5f2eb] font-medium text-sm cursor-pointer"
               >
-                {t(UI_STRINGS.saveGame, hud.language)}
+                Simpen menyang Cloud Online
               </button>
               <button
                 type="button"
@@ -459,7 +468,10 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => engine?.setScreen('menu')}
+                onClick={() => {
+                  engine?.saveGame(true);
+                  engine?.setScreen('menu');
+                }}
                 className="w-full py-3 rounded-xl bg-[#1c231f] hover:bg-red-950/60 border border-white/10 text-[#f5f2eb] font-medium text-sm cursor-pointer"
               >
                 {t(UI_STRINGS.backToMenu, hud.language)}

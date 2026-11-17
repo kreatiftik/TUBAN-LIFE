@@ -8,7 +8,6 @@ import {
   Shirt,
   Sun,
   CloudRain,
-  Save,
   X,
   Navigation,
   Cloud,
@@ -54,7 +53,6 @@ interface PlayerMenuModalProps {
   onSetGraphicsMode: (mode: 'lancar' | 'seimbang' | 'tinggi') => void;
   onToggleMute: () => void;
   onToggleGamelan: () => void;
-  onSaveGame: () => void;
   onCloudPinSignIn: (playerId: string, pin: string) => void;
   onCloudPinRegister: (playerId: string, pin: string) => void;
   onCloudSignIn: () => void;
@@ -84,7 +82,6 @@ export const PlayerMenuModal: React.FC<PlayerMenuModalProps> = ({
   onSetGraphicsMode,
   onToggleMute,
   onToggleGamelan,
-  onSaveGame,
   onCloudPinSignIn,
   onCloudPinRegister,
   onCloudSignIn,
@@ -672,14 +669,6 @@ export const PlayerMenuModal: React.FC<PlayerMenuModalProps> = ({
                 </div>
 
                 <div className="space-y-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={onSaveGame}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#d99b26] hover:bg-[#e5aa38] text-[#111311] text-sm font-semibold cursor-pointer"
-                  >
-                    <Save className="w-4 h-4" />
-                    <span>{t(UI_STRINGS.saveGame, lang)}</span>
-                  </button>
                   <button
                     type="button"
                     onClick={onReturnToMenu}

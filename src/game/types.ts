@@ -214,7 +214,6 @@ export interface GameHudState {
   audioMuted: boolean;
   gamelanEnabled: boolean;
   graphicsMode: 'lancar' | 'seimbang' | 'tinggi';
-  hasSaveData: boolean;
 }
 
 export interface SaveData {
