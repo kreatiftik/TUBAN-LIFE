@@ -325,7 +325,7 @@ service cloud.firestore {
             ])
           )
           || (
-            (!('ownerId' in existing()) || !('createdAt' in existing()) || !existing().keys().hasAll(['character', 'inventoryCounts']) || !existing().keys().hasOnly([
+            (!('ownerId' in existing()) || !('createdAt' in existing()) || !(existing().createdAt is timestamp) || !existing().keys().hasAll(['character', 'inventoryCounts']) || !existing().keys().hasOnly([
               'ownerId',
               'version',
               'createdAt',

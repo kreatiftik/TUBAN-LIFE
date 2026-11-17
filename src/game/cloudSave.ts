@@ -241,9 +241,14 @@ export async function upsertCloudSave(userId: string, saveData: SaveData): Promi
     }
   } else {
     const existingKeys = Object.keys(existingData);
+    const existingCreatedAt = existingData.createdAt;
+    const isTimestampLike =
+      Boolean(existingCreatedAt) &&
+      typeof existingCreatedAt === 'object' &&
+      'seconds' in (existingCreatedAt as Record<string, unknown>);
     const hasExactSchema =
       existingData.ownerId === userId &&
-      existingData.createdAt != null &&
+      isTimestampLike &&
       existingKeys.length === CLOUD_SAVE_SCHEMA_KEYS.length &&
       existingKeys.every((k) => CLOUD_SAVE_KEY_SET.has(k));
 
@@ -257,11 +262,6 @@ export async function upsertCloudSave(userId: string, saveData: SaveData): Promi
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     } else {
-      const existingCreatedAt = existingData.createdAt;
-      const isTimestampLike =
-        Boolean(existingCreatedAt) &&
-        typeof existingCreatedAt === 'object' &&
-        'seconds' in (existingCreatedAt as Record<string, unknown>);
       try {
         await setDoc(saveRef, {
           ownerId: userId,

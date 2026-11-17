@@ -79,7 +79,16 @@ function formatCloudError(err: unknown): string {
     return 'Login Google gagal ing pratinjau iframe. Gunakake ID Pemain + PIN utawa buka ing tab anyar.';
   }
   if (combined.includes('permission-denied') || combined.includes('insufficient permissions')) {
-    return 'Akses Firestore ditolak. Priksa aturan Firestore wis dideploy.';
+    let opLabel = '';
+    try {
+      const parsed = JSON.parse(msg) as { operationType?: unknown };
+      if (typeof parsed.operationType === 'string' && parsed.operationType.length > 0) {
+        opLabel = ` (${parsed.operationType})`;
+      }
+    } catch {
+      // plain error message without JSON wrapper
+    }
+    return `Akses Firestore ditolak${opLabel}. Priksa aturan Firestore wis dideploy lan priksa manawa aplikasi wis nganggo versi paling anyar (muat ulang kaca).`;
   }
   if (combined.includes('client is offline')) {
     return 'Koneksi Firestore lagi offline. Priksa jaringan internet.';
