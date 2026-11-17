@@ -8,6 +8,15 @@ import {
   CharacterShirtStyle,
   CharacterShoeStyle,
 } from './worldData';
+import {
+  CharacterQualityTier,
+  CharacterRealismHandle,
+  createHumanClothMaterial,
+  createHumanCorneaMaterial,
+  createHumanSkinMaterial,
+  getHumanRealismTextures,
+  loadRealisticHumanGlb,
+} from './humanRealism';
 
 export interface CharacterRig {
   group: THREE.Group;
@@ -32,6 +41,7 @@ export interface CharacterRig {
   pantsMeshes: THREE.Mesh[];
   outfitDecorGroup: THREE.Group;
   collarMesh: THREE.Mesh;
+  realism: CharacterRealismHandle;
 }
 
 export interface VehicleModelResult {
@@ -230,14 +240,30 @@ function createCurvedFingerGeo(): THREE.BufferGeometry {
   return geo;
 }
 
+function createCurvedHairCardGeo(width = 0.048, height = 0.072, curveDepth = 0.012): THREE.BufferGeometry {
+  const geo = new THREE.PlaneGeometry(width, height, 4, 4);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const nx = x / (width * 0.5);
+    const ny = (y + height * 0.5) / height; // 0 bottom tip -> 1 root top
+    const zCurve = -curveDepth * (nx * nx) + 0.008 * Math.sin(ny * Math.PI);
+    pos.setXYZ(i, x, y - height * 0.5, zCurve);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function createHumanHeadGeo(isFemale: boolean): THREE.BufferGeometry {
   // phiStart = -PI/2 puts u=0.5 cleanly at +Z center front and hides the UV seam at -Z nape
-  const geo = new THREE.SphereGeometry(1, 64, 48, -Math.PI / 2, Math.PI * 2);
+  const geo = new THREE.SphereGeometry(1, 72, 54, -Math.PI / 2, Math.PI * 2);
   const pos = geo.attributes.position as THREE.BufferAttribute;
 
-  const rx = isFemale ? 0.075 : 0.080;
-  const ry = isFemale ? 0.109 : 0.115;
-  const rz = isFemale ? 0.092 : 0.098;
+  // Refined adult anatomical cranial proportions (~1:7.4 head-to-body ratio)
+  const rx = isFemale ? 0.073 : 0.077;
+  const ry = isFemale ? 0.105 : 0.110;
+  const rz = isFemale ? 0.090 : 0.095;
   const gauss = (d2: number, sigma2: number) => Math.exp(-d2 / sigma2);
 
   for (let i = 0; i < pos.count; i++) {
@@ -715,41 +741,56 @@ function getCachedSkinnedGeo(key: string, builder: () => THREE.BufferGeometry): 
 }
 
 function getSkinnedNeckGeo(isFemale: boolean): THREE.BufferGeometry {
-  return getCachedSkinnedGeo(`neck_${isFemale ? 'f' : 'm'}`, () => {
-    const s = isFemale ? 0.87 : 1.0;
+  return getCachedSkinnedGeo(`neck_anat_${isFemale ? 'f' : 'm'}`, () => {
+    const s = isFemale ? 0.86 : 1.0;
     const w = BONE_IDX;
     const rings: SkinnedRing[] = [
-      { y: 1.360, cx: 0, cz: -0.004, rx: 0.068 * s, rz: 0.064 * s, weights: [[w.SPINE, 0.9], [w.HEAD, 0.1]] },
-      { y: 1.395, cx: 0, cz: -0.004, rx: 0.055 * s, rz: 0.052 * s, weights: [[w.SPINE, 0.65], [w.HEAD, 0.35]] },
-      { y: 1.430, cx: 0, cz: -0.003, rx: 0.048 * s, rz: 0.047 * s, weights: [[w.SPINE, 0.35], [w.HEAD, 0.65]] },
-      { y: 1.468, cx: 0, cz: -0.002, rx: 0.046 * s, rz: 0.046 * s, weights: [[w.SPINE, 0.12], [w.HEAD, 0.88]] },
-      { y: 1.508, cx: 0, cz: 0.000, rx: 0.048 * s, rz: 0.048 * s, weights: [[w.SPINE, 0.02], [w.HEAD, 0.98]] },
+      {
+        y: 1.352,
+        cx: 0,
+        cz: -0.004,
+        rx: 0.074 * s,
+        rz: 0.066 * s,
+        weights: [[w.SPINE, 0.92], [w.HEAD, 0.08]],
+        shapeFn: (angle) => {
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          // Subtle clavicle / sternocleidomastoid base & trapezius slope
+          const trapBack = cosA < -0.2 ? 0.006 * (-cosA) : 0;
+          const clavFront = cosA > 0.3 && Math.abs(sinA) > 0.3 ? 0.004 * cosA : 0;
+          return { dz: clavFront - trapBack };
+        },
+      },
+      { y: 1.390, cx: 0, cz: -0.004, rx: 0.056 * s, rz: 0.053 * s, weights: [[w.SPINE, 0.65], [w.HEAD, 0.35]] },
+      { y: 1.428, cx: 0, cz: -0.003, rx: 0.047 * s, rz: 0.047 * s, weights: [[w.SPINE, 0.35], [w.HEAD, 0.65]] },
+      { y: 1.466, cx: 0, cz: -0.002, rx: 0.045 * s, rz: 0.046 * s, weights: [[w.SPINE, 0.12], [w.HEAD, 0.88]] },
+      { y: 1.506, cx: 0, cz: 0.000, rx: 0.046 * s, rz: 0.046 * s, weights: [[w.SPINE, 0.02], [w.HEAD, 0.98]] },
     ];
-    return buildSkinnedTubeGeometry(rings, 20);
+    return buildSkinnedTubeGeometry(rings, 22);
   });
 }
 
 function getSkinnedTorsoGeo(isFemale: boolean, variant: 'tee' | 'jacket_outer' | 'fitted'): THREE.BufferGeometry {
-  return getCachedSkinnedGeo(`torso_${isFemale ? 'f' : 'm'}_${variant}`, () => {
+  return getCachedSkinnedGeo(`torso_anat_${isFemale ? 'f' : 'm'}_${variant}`, () => {
     const w = BONE_IDX;
-    const sx = isFemale ? 0.93 : 1.04;
-    const sz = isFemale ? 0.95 : 1.02;
+    const sx = isFemale ? 0.92 : 1.06;
+    const sz = isFemale ? 0.94 : 1.02;
     const isOuter = variant === 'jacket_outer';
     const pad = isOuter ? 0.015 : variant === 'tee' ? -0.004 : 0.0;
 
-    // Anatomical vertical profile (y in bodyGroup space: pelvis=0.78..0.85, chest=1.18..1.35, collar=1.40)
+    // Anatomical vertical profile with refined clavicle-to-ribcage-to-waist taper
     const spec: Array<[number, number, number, number, number]> = [
       // y, rxBase, rzBase, cz, spineWeight
-      [0.77, 0.140, 0.098, -0.004, 0.25],
-      [0.82, 0.143, 0.100, -0.002, 0.55],
-      [0.87, isFemale ? 0.124 : 0.136, 0.092, 0.000, 0.85],
-      [0.94, isFemale ? 0.120 : 0.138, 0.091, 0.002, 0.98],
-      [1.02, isFemale ? 0.132 : 0.148, 0.096, 0.003, 1.0],
-      [1.10, isFemale ? 0.146 : 0.162, 0.104, 0.004, 1.0],
-      [1.19, isFemale ? 0.156 : 0.178, isFemale ? 0.114 : 0.112, 0.005, 1.0],
-      [1.27, isFemale ? 0.162 : 0.190, 0.110, 0.003, 1.0],
-      [1.33, isFemale ? 0.150 : 0.174, 0.098, -0.001, 1.0],
-      [1.375, isFemale ? 0.105 : 0.120, 0.078, -0.003, 1.0],
+      [0.77, 0.140, 0.097, -0.004, 0.25],
+      [0.82, 0.142, 0.099, -0.002, 0.55],
+      [0.87, isFemale ? 0.120 : 0.135, 0.090, 0.000, 0.85],
+      [0.94, isFemale ? 0.116 : 0.137, 0.089, 0.002, 0.98],
+      [1.02, isFemale ? 0.130 : 0.149, 0.095, 0.003, 1.0],
+      [1.10, isFemale ? 0.145 : 0.165, 0.104, 0.004, 1.0],
+      [1.19, isFemale ? 0.155 : 0.181, isFemale ? 0.115 : 0.113, 0.005, 1.0],
+      [1.27, isFemale ? 0.161 : 0.194, 0.110, 0.003, 1.0],
+      [1.33, isFemale ? 0.149 : 0.178, 0.098, -0.001, 1.0],
+      [1.375, isFemale ? 0.103 : 0.122, 0.078, -0.003, 1.0],
       [1.405, isFemale ? 0.064 : 0.072, 0.064, -0.004, 0.92],
     ];
 
@@ -768,23 +809,25 @@ function getSkinnedTorsoGeo(isFemale: boolean, variant: 'tee' | 'jacket_outer' |
         shapeFn: (angle) => {
           const sinA = Math.sin(angle);
           const cosA = Math.cos(angle);
-          // Subtle anatomical pectoral / bust front volume + back lat/spine contour + soft cloth folds
           let dz = 0;
           if (cosA > 0.15 && y > 1.08 && y < 1.32) {
             const chestBand = Math.sin(((y - 1.08) / 0.24) * Math.PI);
             const dualLobe = 0.65 + 0.35 * Math.sin(Math.abs(sinA) * Math.PI);
-            dz += (isFemale ? 0.017 : 0.011) * chestBand * cosA * dualLobe;
+            dz += (isFemale ? 0.018 : 0.012) * chestBand * cosA * dualLobe;
+          }
+          // Subtle clavicle ridge & trapezius slope near upper torso
+          if (y >= 1.29 && y <= 1.37 && cosA > 0.25) {
+            dz += 0.003 * Math.sin(((y - 1.29) / 0.08) * Math.PI) * cosA;
           }
           // Natural spine hollow along center back
           if (cosA < -0.5 && y > 0.92 && y < 1.32) {
-            dz += 0.006 * (-cosA - 0.5) * 2;
+            dz += 0.0065 * (-cosA - 0.5) * 2;
           }
-          // Subtle fabric drape ripples near waist/ribcage
+          // Natural fabric drape ripples near waist/ribcage
           const fold = isOuter || variant === 'fitted'
-            ? 0.0022 * Math.sin(angle * 4 + y * 16)
-            : 0.0014 * Math.sin(angle * 3 + y * 14);
+            ? 0.0024 * Math.sin(angle * 4 + y * 16)
+            : 0.0016 * Math.sin(angle * 3 + y * 14);
 
-          // Blend shoulder outer caps subtly with left/right arm swing so armholes never crease harshly
           let wOverride: Array<[number, number]> | undefined;
           if (y >= 1.24 && Math.abs(sinA) > 0.78) {
             const armInf = 0.16 * ((Math.abs(sinA) - 0.78) / 0.22);
@@ -799,7 +842,6 @@ function getSkinnedTorsoGeo(isFemale: boolean, variant: 'tee' | 'jacket_outer' |
     });
 
     if (isOuter) {
-      // Open-front bomber jacket: leaves +/-17deg open down center front so inner T-shirt shows clearly
       return buildSkinnedTubeGeometry(rings, 28, 0.30, Math.PI * 2 - 0.60);
     }
     return buildSkinnedTubeGeometry(rings, 28);
@@ -811,37 +853,37 @@ function getSkinnedArmGeo(
   isFemale: boolean,
   part: 'short_sleeve' | 'jacket_sleeve' | 'long_sleeve' | 'forearm_skin' | 'jacket_forearm_skin'
 ): THREE.BufferGeometry {
-  return getCachedSkinnedGeo(`arm_${side < 0 ? 'L' : 'R'}_${isFemale ? 'f' : 'm'}_${part}`, () => {
+  return getCachedSkinnedGeo(`arm_anat_${side < 0 ? 'L' : 'R'}_${isFemale ? 'f' : 'm'}_${part}`, () => {
     const w = BONE_IDX;
     const armBone = side < 0 ? w.L_ARM : w.R_ARM;
     const elbowBone = side < 0 ? w.L_ELBOW : w.R_ELBOW;
     const wristBone = side < 0 ? w.L_WRIST : w.R_WRIST;
 
     const armX = isFemale ? 0.172 : 0.194;
-    const scale = isFemale ? 0.87 : 1.0;
+    const scale = isFemale ? 0.86 : 1.0;
     const yShoulder = SPINE_BIND_Y + ARM_LOCAL_Y; // 1.305
     const yElbow = yShoulder + ELBOW_LOCAL_Y; // 1.080
     const yWrist = yElbow + WRIST_LOCAL_Y; // 0.860
 
-    // Helper for smooth cosine transition weight
     const lerpW = (t: number, b0: number, b1: number): Array<[number, number]> => [
       [b0, 1 - t],
       [b1, t],
     ];
 
+    // Anatomical deltoid cap -> bicep -> elbow taper -> forearm muscle belly -> slender wrist
     const fullPts: Array<{ t: number; y: number; cx: number; r: number; weights: Array<[number, number]> }> = [
       { t: 0.00, y: yShoulder + 0.032, cx: side * (armX * 0.72), r: 0.056 * scale, weights: [[w.SPINE, 0.82], [armBone, 0.18]] },
-      { t: 0.08, y: yShoulder + 0.010, cx: side * (armX * 0.90), r: 0.055 * scale, weights: [[w.SPINE, 0.40], [armBone, 0.60]] },
-      { t: 0.16, y: yShoulder - 0.025, cx: side * armX, r: 0.052 * scale, weights: [[armBone, 0.92], [w.SPINE, 0.08]] },
-      { t: 0.28, y: yShoulder - 0.090, cx: side * armX, r: 0.047 * scale, weights: [[armBone, 1.0]] },
-      { t: 0.37, y: yShoulder - 0.145, cx: side * armX, r: 0.044 * scale, weights: [[armBone, 1.0]] },
-      { t: 0.45, y: yElbow + 0.035, cx: side * armX, r: 0.040 * scale, weights: lerpW(0.20, armBone, elbowBone) },
-      { t: 0.51, y: yElbow + 0.000, cx: side * armX, r: 0.039 * scale, weights: lerpW(0.50, armBone, elbowBone) },
-      { t: 0.58, y: yElbow - 0.040, cx: side * armX, r: 0.041 * scale, weights: lerpW(0.84, armBone, elbowBone) },
+      { t: 0.08, y: yShoulder + 0.010, cx: side * (armX * 0.90), r: 0.057 * scale, weights: [[w.SPINE, 0.40], [armBone, 0.60]] },
+      { t: 0.16, y: yShoulder - 0.025, cx: side * armX, r: 0.053 * scale, weights: [[armBone, 0.92], [w.SPINE, 0.08]] },
+      { t: 0.28, y: yShoulder - 0.090, cx: side * armX, r: 0.046 * scale, weights: [[armBone, 1.0]] },
+      { t: 0.37, y: yShoulder - 0.145, cx: side * armX, r: 0.043 * scale, weights: [[armBone, 1.0]] },
+      { t: 0.45, y: yElbow + 0.035, cx: side * armX, r: 0.039 * scale, weights: lerpW(0.20, armBone, elbowBone) },
+      { t: 0.51, y: yElbow + 0.000, cx: side * armX, r: 0.038 * scale, weights: lerpW(0.50, armBone, elbowBone) },
+      { t: 0.58, y: yElbow - 0.040, cx: side * armX, r: 0.042 * scale, weights: lerpW(0.84, armBone, elbowBone) },
       { t: 0.70, y: yElbow - 0.105, cx: side * armX, r: 0.036 * scale, weights: [[elbowBone, 1.0]] },
-      { t: 0.84, y: yElbow - 0.165, cx: side * armX, r: 0.029 * scale, weights: [[elbowBone, 1.0]] },
-      { t: 0.94, y: yWrist + 0.022, cx: side * armX, r: 0.025 * scale, weights: lerpW(0.35, elbowBone, wristBone) },
-      { t: 1.00, y: yWrist - 0.006, cx: side * armX, r: 0.024 * scale, weights: lerpW(0.75, elbowBone, wristBone) },
+      { t: 0.84, y: yElbow - 0.165, cx: side * armX, r: 0.028 * scale, weights: [[elbowBone, 1.0]] },
+      { t: 0.94, y: yWrist + 0.022, cx: side * armX, r: 0.024 * scale, weights: lerpW(0.35, elbowBone, wristBone) },
+      { t: 1.00, y: yWrist - 0.006, cx: side * armX, r: 0.023 * scale, weights: lerpW(0.75, elbowBone, wristBone) },
     ];
 
     let slice = fullPts;
@@ -852,7 +894,6 @@ function getSkinnedArmGeo(
       rBoost = 1.08;
       cuffAtEnd = true;
     } else if (part === 'jacket_sleeve') {
-      // 3/4 pushed-up bomber sleeve (like Reference Image 3!) ending cleanly below elbow
       slice = fullPts.slice(0, 9);
       rBoost = 1.15;
       cuffAtEnd = true;
@@ -862,10 +903,10 @@ function getSkinnedArmGeo(
       cuffAtEnd = true;
     } else if (part === 'forearm_skin') {
       slice = fullPts.slice(3);
-      rBoost = 0.96;
+      rBoost = 0.95;
     } else if (part === 'jacket_forearm_skin') {
       slice = fullPts.slice(7);
-      rBoost = 0.96;
+      rBoost = 0.95;
     }
 
     const rings: SkinnedRing[] = slice.map((pt, i) => {
@@ -880,12 +921,12 @@ function getSkinnedArmGeo(
         rz: pt.r * rBoost * foldScale * 1.03,
         weights: pt.weights,
         shapeFn: isFabric
-          ? (angle) => ({ dr: 1 + 0.025 * Math.sin(angle * 3 + pt.y * 22) })
+          ? (angle) => ({ dr: 1 + 0.026 * Math.sin(angle * 3 + pt.y * 22) })
           : undefined,
       };
     });
 
-    return buildSkinnedTubeGeometry(rings, 16);
+    return buildSkinnedTubeGeometry(rings, 18);
   });
 }
 
@@ -894,35 +935,35 @@ function getSkinnedLegGeo(
   isFemale: boolean,
   part: 'pants_full' | 'pants_kulot' | 'pants_shorts' | 'lower_skin'
 ): THREE.BufferGeometry {
-  return getCachedSkinnedGeo(`leg_${side < 0 ? 'L' : 'R'}_${isFemale ? 'f' : 'm'}_${part}`, () => {
+  return getCachedSkinnedGeo(`leg_anat_${side < 0 ? 'L' : 'R'}_${isFemale ? 'f' : 'm'}_${part}`, () => {
     const w = BONE_IDX;
     const legBone = side < 0 ? w.L_LEG : w.R_LEG;
     const kneeBone = side < 0 ? w.L_KNEE : w.R_KNEE;
     const ankleBone = side < 0 ? w.L_ANKLE : w.R_ANKLE;
 
     const hipX = isFemale ? 0.092 : 0.096;
-    const yHip = RIG_HIP_Y; // 0.78
-    const yKnee = yHip - RIG_THIGH_LEN; // 0.43
-    const yAnkle = yKnee - RIG_SHIN_LEN; // 0.08
+    const yHip = RIG_HIP_Y;
+    const yKnee = yHip - RIG_THIGH_LEN;
+    const yAnkle = yKnee - RIG_SHIN_LEN;
     const lerpW = (t: number, b0: number, b1: number): Array<[number, number]> => [
       [b0, 1 - t],
       [b1, t],
     ];
 
+    // Refined thigh quadriceps taper & gastrocnemius calf contour
     const fullPts: Array<{ y: number; cx: number; rx: number; rz: number; weights: Array<[number, number]> }> = [
-      // Seamless hip saddle up inside pelvis
       { y: yHip + 0.045, cx: side * (hipX * 0.78), rx: 0.082, rz: 0.088, weights: [[w.PELVIS, 0.78], [legBone, 0.22]] },
       { y: yHip + 0.005, cx: side * (hipX * 0.94), rx: 0.079, rz: 0.084, weights: [[w.PELVIS, 0.42], [legBone, 0.58]] },
       { y: yHip - 0.045, cx: side * hipX, rx: 0.077, rz: 0.082, weights: [[w.PELVIS, 0.10], [legBone, 0.90]] },
-      { y: yHip - 0.140, cx: side * hipX, rx: 0.073, rz: 0.077, weights: [[legBone, 1.0]] },
-      { y: yHip - 0.240, cx: side * hipX, rx: 0.064, rz: 0.068, weights: [[legBone, 1.0]] },
-      { y: yKnee + 0.048, cx: side * hipX, rx: 0.058, rz: 0.061, weights: lerpW(0.22, legBone, kneeBone) },
-      { y: yKnee + 0.000, cx: side * hipX, rx: 0.056, rz: 0.059, weights: lerpW(0.52, legBone, kneeBone) },
-      { y: yKnee - 0.050, cx: side * hipX, rx: 0.057, rz: 0.060, weights: lerpW(0.84, legBone, kneeBone) },
-      { y: yKnee - 0.125, cx: side * hipX, rx: 0.058, rz: 0.061, weights: [[kneeBone, 1.0]] },
-      { y: yKnee - 0.225, cx: side * hipX, rx: 0.049, rz: 0.052, weights: [[kneeBone, 1.0]] },
-      { y: yAnkle + 0.032, cx: side * hipX, rx: 0.041, rz: 0.044, weights: lerpW(0.20, kneeBone, ankleBone) },
-      { y: yAnkle + 0.002, cx: side * hipX, rx: 0.040, rz: 0.043, weights: lerpW(0.55, kneeBone, ankleBone) },
+      { y: yHip - 0.140, cx: side * hipX, rx: 0.072, rz: 0.076, weights: [[legBone, 1.0]] },
+      { y: yHip - 0.240, cx: side * hipX, rx: 0.062, rz: 0.066, weights: [[legBone, 1.0]] },
+      { y: yKnee + 0.048, cx: side * hipX, rx: 0.056, rz: 0.059, weights: lerpW(0.22, legBone, kneeBone) },
+      { y: yKnee + 0.000, cx: side * hipX, rx: 0.054, rz: 0.057, weights: lerpW(0.52, legBone, kneeBone) },
+      { y: yKnee - 0.050, cx: side * hipX, rx: 0.055, rz: 0.058, weights: lerpW(0.84, legBone, kneeBone) },
+      { y: yKnee - 0.125, cx: side * hipX, rx: 0.058, rz: 0.062, weights: [[kneeBone, 1.0]] },
+      { y: yKnee - 0.225, cx: side * hipX, rx: 0.046, rz: 0.049, weights: [[kneeBone, 1.0]] },
+      { y: yAnkle + 0.032, cx: side * hipX, rx: 0.039, rz: 0.042, weights: lerpW(0.20, kneeBone, ankleBone) },
+      { y: yAnkle + 0.002, cx: side * hipX, rx: 0.038, rz: 0.041, weights: lerpW(0.55, kneeBone, ankleBone) },
     ];
 
     let slice = fullPts;
@@ -936,7 +977,7 @@ function getSkinnedLegGeo(
     const isKulot = part === 'pants_kulot';
 
     const rings: SkinnedRing[] = slice.map((pt, i) => {
-      const skinShrink = isSkin ? 0.88 : 1.04;
+      const skinShrink = isSkin ? 0.87 : 1.04;
       const kulotFlare = isKulot && pt.y < yKnee + 0.06 ? 1.0 + ((yKnee + 0.06 - pt.y) / 0.42) * 1.15 : 1.0;
       const isCuff = !isSkin && !isKulot && i === slice.length - 1;
       return {
@@ -949,13 +990,12 @@ function getSkinnedLegGeo(
         shapeFn: isSkin
           ? undefined
           : (angle) => ({
-              // Subtle natural trouser knee/thigh crease ripples
-              dr: 1 + 0.022 * Math.sin(angle * 3 + pt.y * 16),
+              dr: 1 + 0.024 * Math.sin(angle * 3 + pt.y * 16),
             }),
       };
     });
 
-    return buildSkinnedTubeGeometry(rings, 18);
+    return buildSkinnedTubeGeometry(rings, 20);
   });
 }
 
@@ -1267,34 +1307,39 @@ const CHAR_GEOS = (() => {
     headMale: createHumanHeadGeo(false),
     headFemale: createHumanHeadGeo(true),
     ear: createEarGeo(),
-    eyeball: createEyeballGeo(0.0125),
-    eyelidArc: new THREE.TorusGeometry(0.0132, 0.0024, 6, 14, Math.PI * 0.92),
-    brow: new THREE.CapsuleGeometry(0.0036, 0.023, 4, 8),
-    mustache: new THREE.CapsuleGeometry(0.0058, 0.038, 4, 8),
+    eyeball: createEyeballGeo(0.0124),
+    corneaCap: new THREE.SphereGeometry(0.0129, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.46),
+    eyelidCap: new THREE.SphereGeometry(0.0138, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.48),
+    eyelidArc: new THREE.TorusGeometry(0.0132, 0.0022, 6, 14, Math.PI * 0.92),
+    lashArc: new THREE.TorusGeometry(0.0139, 0.0014, 5, 14, Math.PI * 0.88),
+    brow: new THREE.CapsuleGeometry(0.0033, 0.024, 4, 8),
+    mustache: new THREE.CapsuleGeometry(0.0056, 0.038, 4, 8),
     glassesRim: new THREE.TorusGeometry(0.019, 0.0030, 6, 16),
     glassesBridge: new THREE.CapsuleGeometry(0.0024, 0.015, 3, 6),
     glassesArm: new THREE.CapsuleGeometry(0.0020, 0.075, 3, 6),
-    hairCap: new THREE.SphereGeometry(0.095, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.58),
-    hairBack: new THREE.SphereGeometry(0.088, 18, 14),
-    hairFringe: new THREE.CapsuleGeometry(0.021, 0.082, 4, 8),
-    hairSideburn: new THREE.CapsuleGeometry(0.0085, 0.036, 4, 6),
-    hairSpike: new THREE.ConeGeometry(0.021, 0.056, 8),
-    curlyClump: new THREE.SphereGeometry(0.028, 10, 8),
-    bobSide: new THREE.CapsuleGeometry(0.025, 0.095, 4, 8),
-    bobBack: new THREE.CylinderGeometry(0.078, 0.098, 0.135, 16),
-    undercutTop: createRoundedExtrude(0.095, 0.048, 0.138, 0.024, 0.010),
-    ponytail: new THREE.CapsuleGeometry(0.024, 0.135, 4, 8),
-    hairBand: new THREE.TorusGeometry(0.026, 0.008, 6, 12),
-    kondeBun: new THREE.SphereGeometry(0.048, 14, 12),
+    hairCard: createCurvedHairCardGeo(0.048, 0.072, 0.011),
+    hairCardLong: createCurvedHairCardGeo(0.056, 0.125, 0.014),
+    hairCap: new THREE.SphereGeometry(0.093, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.58),
+    hairBack: new THREE.SphereGeometry(0.086, 18, 14),
+    hairFringe: new THREE.CapsuleGeometry(0.020, 0.080, 4, 8),
+    hairSideburn: new THREE.CapsuleGeometry(0.0080, 0.036, 4, 6),
+    hairSpike: new THREE.ConeGeometry(0.020, 0.054, 8),
+    curlyClump: new THREE.SphereGeometry(0.027, 10, 8),
+    bobSide: new THREE.CapsuleGeometry(0.024, 0.095, 4, 8),
+    bobBack: new THREE.CylinderGeometry(0.076, 0.096, 0.135, 16),
+    undercutTop: createRoundedExtrude(0.093, 0.046, 0.135, 0.024, 0.010),
+    ponytail: new THREE.CapsuleGeometry(0.023, 0.135, 4, 8),
+    hairBand: new THREE.TorusGeometry(0.025, 0.008, 6, 12),
+    kondeBun: new THREE.SphereGeometry(0.047, 14, 12),
     hijabCiput: createHijabCiputGeo(),
     hijabHood: createHijabHoodGeo(),
     caping: new THREE.ConeGeometry(0.28, 0.15, 22),
-    peci: new THREE.CylinderGeometry(0.086, 0.093, 0.085, 20),
-    policeCap: new THREE.CylinderGeometry(0.105, 0.094, 0.08, 20),
-    policeBrim: new THREE.CylinderGeometry(0.098, 0.098, 0.014, 16, 1, false, -Math.PI * 0.4, Math.PI * 0.8),
-    helmetShell: new THREE.SphereGeometry(0.114, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.65),
-    helmetVisor: new THREE.CylinderGeometry(0.110, 0.110, 0.062, 16, 1, true, -Math.PI * 0.36, Math.PI * 0.72),
-    topiCrown: new THREE.SphereGeometry(0.095, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.5),
+    peci: new THREE.CylinderGeometry(0.084, 0.091, 0.085, 20),
+    policeCap: new THREE.CylinderGeometry(0.103, 0.092, 0.08, 20),
+    policeBrim: new THREE.CylinderGeometry(0.096, 0.096, 0.014, 16, 1, false, -Math.PI * 0.4, Math.PI * 0.8),
+    helmetShell: new THREE.SphereGeometry(0.112, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.65),
+    helmetVisor: new THREE.CylinderGeometry(0.108, 0.108, 0.062, 16, 1, true, -Math.PI * 0.36, Math.PI * 0.72),
+    topiCrown: new THREE.SphereGeometry(0.093, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.5),
   };
   Object.values(geos).forEach((g) => {
     g.userData.shared = true;
@@ -1352,6 +1397,8 @@ export interface CharacterBuildOptions {
   textures?: ProceduralTexturePack;
   randomize?: boolean;
   archetype?: CharacterArchetype;
+  qualityTier?: CharacterQualityTier;
+  customGlbUrl?: string;
 }
 
 const PROCEDURAL_PALETTES = {
@@ -1645,10 +1692,15 @@ function buildOutfitDecor(
 export function createCharacterRig(rawOptions: CharacterBuildOptions): CharacterRig {
   const options = rawOptions.randomize ? resolveProceduralCharacterOptions(rawOptions) : rawOptions;
   const maps = getCharMaps(options.textures);
+  const realismTex = getHumanRealismTextures();
+  const tier: CharacterQualityTier = options.qualityTier ?? 'seimbang';
 
   const group = new THREE.Group();
   const bodyGroup = new THREE.Group();
   group.add(bodyGroup);
+
+  const detailGroup = new THREE.Group();
+  const hairCardGroup = new THREE.Group();
 
   // Use THREE.Bone for the articulated hierarchy so SkinnedMesh deforms seamlessly across all joints
   const pelvisGroup = new THREE.Bone();
@@ -1667,27 +1719,35 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
         options.shirtStyle === 'kebaya'));
 
   const baseSkinHex = options.skinColor ?? 0xd19a72;
-  const headSkinMat = new THREE.MeshStandardMaterial({
+  const faceMap = tier === 'lancar' ? realismTex.faceMap512 : realismTex.faceMap1024;
+  const skinNorm = tier === 'lancar' ? maps.skinNormal : realismTex.skinPoreNormal;
+  const clothNorm = tier === 'lancar' ? maps.clothNormal : realismTex.clothFoldNormal;
+
+  const headSkinMat = createHumanSkinMaterial({
     color: baseSkinHex,
-    map: maps.faceMap,
-    normalMap: maps.skinNormal,
-    normalScale: new THREE.Vector2(0.42, 0.42),
-    roughness: 0.56,
-    metalness: 0.01,
+    map: faceMap,
+    normalMap: skinNorm,
+    normalScale: tier === 'lancar' ? 0.35 : 0.48,
+    roughness: 0.54,
+    tier,
   });
-  const bodySkinMat = new THREE.MeshStandardMaterial({
+  const bodySkinMat = createHumanSkinMaterial({
     color: baseSkinHex,
     map: maps.bodySkinMap,
-    normalMap: maps.skinNormal,
-    normalScale: new THREE.Vector2(0.36, 0.36),
-    roughness: 0.58,
-    metalness: 0.01,
+    normalMap: skinNorm,
+    normalScale: tier === 'lancar' ? 0.30 : 0.40,
+    roughness: 0.56,
+    tier,
   });
 
   const skinCol = new THREE.Color(baseSkinHex);
-  const eyelidMat = new THREE.MeshStandardMaterial({
-    color: skinCol.clone().multiplyScalar(0.84),
-    roughness: 0.54,
+  const eyelidMat = createHumanSkinMaterial({
+    color: skinCol.clone().multiplyScalar(0.86).getHex(),
+    map: maps.bodySkinMap,
+    normalMap: skinNorm,
+    normalScale: 0.25,
+    roughness: 0.52,
+    tier,
   });
 
   const outfitCfg = options.outfit ? OUTFIT_COLORS[options.outfit] : null;
@@ -1716,30 +1776,36 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
         ? options.textures.lurik
         : null;
 
-  const shirtMat = new THREE.MeshStandardMaterial({
+  const shirtMat = createHumanClothMaterial({
     color: shirtColor,
-    roughness: shirtStyle === 'jaket' ? 0.58 : 0.78,
+    roughness: shirtStyle === 'jaket' ? 0.56 : 0.78,
     metalness: outfitCfg?.metalness ?? (shirtStyle === 'jaket' ? 0.08 : 0.03),
     map: shirtMap,
-    normalMap: maps.clothNormal,
-    normalScale: new THREE.Vector2(0.85, 0.85),
+    normalMap: clothNorm,
+    normalScale: 0.92,
     side: shirtStyle === 'jaket' ? THREE.DoubleSide : THREE.FrontSide,
+    tier,
   });
 
-  const innerTeeMat = new THREE.MeshStandardMaterial({
+  const innerTeeMat = createHumanClothMaterial({
     color: 0xe8eaed,
     roughness: 0.84,
     metalness: 0.01,
-    normalMap: maps.clothNormal,
-    normalScale: new THREE.Vector2(0.55, 0.55),
+    map: null,
+    normalMap: clothNorm,
+    normalScale: 0.6,
+    tier,
   });
 
   const collarColor = outfitCfg ? outfitCfg.collar : 0xe5e7eb;
-  const collarMat = new THREE.MeshStandardMaterial({
+  const collarMat = createHumanClothMaterial({
     color: collarColor,
     roughness: 0.66,
-    normalMap: maps.clothNormal,
-    normalScale: new THREE.Vector2(0.45, 0.45),
+    metalness: 0.02,
+    map: null,
+    normalMap: clothNorm,
+    normalScale: 0.5,
+    tier,
   });
 
   const pantsMap =
@@ -1749,29 +1815,43 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
         ? options.textures.batikWall
         : null;
 
-  const pantsMat = new THREE.MeshStandardMaterial({
+  const pantsMat = createHumanClothMaterial({
     color: pantsColor,
-    roughness: pantsStyle === 'jeans' ? 0.86 : 0.80,
+    roughness: pantsStyle === 'jeans' ? 0.84 : 0.78,
     metalness: 0.02,
     map: pantsMap,
-    normalMap: pantsStyle === 'jeans' ? maps.denimNormal : maps.clothNormal,
-    normalScale: new THREE.Vector2(0.95, 0.95),
+    normalMap: pantsStyle === 'jeans' ? maps.denimNormal : clothNorm,
+    normalScale: 0.98,
+    tier,
   });
 
   const hairMat = new THREE.MeshStandardMaterial({
     color: hairColor,
     normalMap: maps.hairNormal,
-    normalScale: new THREE.Vector2(0.85, 0.85),
-    roughness: 0.62,
-    metalness: 0.06,
+    normalScale: new THREE.Vector2(0.9, 0.9),
+    roughness: 0.56,
+    metalness: 0.08,
   });
-  const hijabMat = new THREE.MeshStandardMaterial({
-    color: hijabColor,
-    normalMap: maps.clothNormal,
-    normalScale: new THREE.Vector2(0.6, 0.6),
-    roughness: 0.76,
-    metalness: 0.03,
+  const hairCardMat = new THREE.MeshStandardMaterial({
+    color: hairColor,
+    map: realismTex.hairStrandMap,
+    alphaMap: realismTex.hairStrandAlpha,
+    normalMap: maps.hairNormal,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    alphaTest: 0.34,
+    roughness: 0.48,
+    metalness: 0.1,
     side: THREE.DoubleSide,
+  });
+  const hijabMat = createHumanClothMaterial({
+    color: hijabColor,
+    normalMap: clothNorm,
+    normalScale: 0.72,
+    roughness: 0.74,
+    metalness: 0.02,
+    map: null,
+    side: THREE.DoubleSide,
+    tier,
   });
   const hijabCiputMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(hijabColor).multiplyScalar(0.80),
@@ -1780,9 +1860,14 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
   });
 
   const eyeballMat = new THREE.MeshStandardMaterial({
-    map: maps.eyeIris,
-    roughness: 0.16,
+    map: tier === 'lancar' ? maps.eyeIris : realismTex.eyeIris512,
+    roughness: 0.14,
     metalness: 0.04,
+  });
+  const corneaMat = createHumanCorneaMaterial(tier);
+  const lashMat = new THREE.MeshStandardMaterial({
+    color: 0x16110e,
+    roughness: 0.65,
   });
 
   const shirtMeshes: THREE.Mesh[] = [];
@@ -2112,25 +2197,64 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
     head.add(stache);
   }
 
-  const eyeX = isFemale ? 0.0265 : 0.0285;
-  const eyeY = 0.1515;
-  const eyeZ = 0.0765;
-  [-eyeX, eyeX].forEach((ex) => {
-    const eyeball = new THREE.Mesh(CHAR_GEOS.eyeball, eyeballMat);
-    eyeball.position.set(ex, eyeY, eyeZ);
-    eyeball.scale.set(1.04, 0.88, 0.92);
+  const eyeX = isFemale ? 0.0258 : 0.0276;
+  const eyeY = 0.1510;
+  const eyeZ = 0.0748;
+  let leftEyeObj: THREE.Object3D | null = null;
+  let rightEyeObj: THREE.Object3D | null = null;
+  let leftEyelidPivot: THREE.Object3D | null = null;
+  let rightEyelidPivot: THREE.Object3D | null = null;
 
-    const upperLid = new THREE.Mesh(CHAR_GEOS.eyelidArc, eyelidMat);
-    upperLid.position.set(ex, eyeY + 0.0022, eyeZ + 0.0042);
-    upperLid.rotation.set(0.32, ex < 0 ? -0.08 : 0.08, ex < 0 ? 0.04 : -0.04);
-    upperLid.scale.set(1.08, 0.82, 0.85);
+  [-eyeX, eyeX].forEach((ex, eyeIdx) => {
+    const eyeSocket = new THREE.Group();
+    eyeSocket.position.set(ex, eyeY, eyeZ);
+
+    const eyeball = new THREE.Mesh(CHAR_GEOS.eyeball, eyeballMat);
+    eyeball.scale.set(1.03, 0.89, 0.92);
+    eyeSocket.add(eyeball);
+
+    if (corneaMat) {
+      const cornea = new THREE.Mesh(CHAR_GEOS.corneaCap, corneaMat);
+      cornea.rotation.x = Math.PI / 2;
+      cornea.position.z = 0.0014;
+      cornea.scale.set(1.03, 0.92, 0.89);
+      eyeSocket.add(cornea);
+    }
+
+    // Articulated upper eyelid pivot centered on eyeball for natural human blinking
+    const lidPivot = new THREE.Group();
+    lidPivot.rotation.set(-0.18, 0, 0);
+    const lidShell = new THREE.Mesh(CHAR_GEOS.eyelidCap, eyelidMat);
+    lidShell.rotation.x = -0.05;
+    lidShell.scale.set(1.04, 0.94, 0.96);
+    lidPivot.add(lidShell);
+
+    const lashRim = new THREE.Mesh(CHAR_GEOS.lashArc, lashMat);
+    lashRim.position.set(0, 0.0008, 0.0028);
+    lashRim.rotation.x = 0.18;
+    lidPivot.add(lashRim);
+
+    const creaseRim = new THREE.Mesh(CHAR_GEOS.eyelidArc, eyelidMat);
+    creaseRim.position.set(0, 0.0032, 0.0046);
+    creaseRim.rotation.set(0.32, ex < 0 ? -0.08 : 0.08, ex < 0 ? 0.04 : -0.04);
+    creaseRim.scale.set(1.08, 0.82, 0.85);
 
     const brow = new THREE.Mesh(CHAR_GEOS.brow, hairMat);
     brow.rotation.z = Math.PI / 2 + (ex < 0 ? 0.09 : -0.09);
     brow.rotation.y = ex < 0 ? 0.22 : -0.22;
-    brow.position.set(ex, eyeY + 0.0175, eyeZ + 0.0115);
-    brow.scale.set(0.85, 0.95, 0.65);
-    head.add(eyeball, upperLid, brow);
+    brow.position.set(ex, eyeY + 0.0172, eyeZ + 0.0112);
+    brow.scale.set(0.84, 0.95, 0.65);
+
+    eyeSocket.add(lidPivot, creaseRim);
+    head.add(eyeSocket, brow);
+
+    if (eyeIdx === 0) {
+      leftEyeObj = eyeball;
+      leftEyelidPivot = lidPivot;
+    } else {
+      rightEyeObj = eyeball;
+      rightEyelidPivot = lidPivot;
+    }
 
     if (options.hasGlasses) {
       const rim = new THREE.Mesh(CHAR_GEOS.glassesRim, SHARED_CHAR_MATS.glasses);
@@ -2150,8 +2274,13 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
     head.add(bridge);
   }
 
-  // Distinct Fitted Hairstyles & Layered Hijab
-  const headScaleX = isFemale ? 0.95 : 1.0;
+  head.add(hairCardGroup);
+  spineGroup.add(detailGroup);
+  hairCardGroup.visible = tier !== 'lancar';
+  detailGroup.visible = tier !== 'lancar';
+
+  // Distinct Fitted Hairstyles + Layered Hair-Strand Cards & Hijab
+  const headScaleX = isFemale ? 0.94 : 1.0;
   if (hairStyle === 'hijab') {
     const ciput = new THREE.Mesh(CHAR_GEOS.hijabCiput, hijabCiputMat);
     const hijabHood = new THREE.Mesh(CHAR_GEOS.hijabHood, hijabMat);
@@ -2159,41 +2288,62 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
     hijabHood.receiveShadow = true;
     head.add(ciput, hijabHood);
 
-    // Skinned neck & collarbone/chest drape anchored smoothly between HEAD and SPINE
     bindSkinned(getSkinnedHijabDrapeGeo(isFemale), hijabMat);
   } else {
     const hairCap = new THREE.Mesh(CHAR_GEOS.hairCap, hairMat);
-    hairCap.position.set(0, hairStyle === 'elder' ? 0.165 : 0.154, -0.010);
-    hairCap.scale.set(headScaleX * 0.87, 1.16, 1.05);
+    hairCap.position.set(0, hairStyle === 'elder' ? 0.163 : 0.153, -0.010);
+    hairCap.scale.set(headScaleX * 0.87, 1.15, 1.04);
     hairCap.rotation.x = hairStyle === 'elder' ? -0.34 : -0.18;
     head.add(hairCap);
 
     const hairBack = new THREE.Mesh(CHAR_GEOS.hairBack, hairMat);
-    hairBack.position.set(0, 0.132, -0.025);
-    hairBack.scale.set(headScaleX * 0.86, 1.04, 0.90);
+    hairBack.position.set(0, 0.130, -0.024);
+    hairBack.scale.set(headScaleX * 0.86, 1.03, 0.89);
     head.add(hairBack);
+
+    const addHairCard = (
+      x: number,
+      y: number,
+      z: number,
+      rx: number,
+      ry: number,
+      rz: number,
+      sx = 1,
+      sy = 1,
+      longCard = false
+    ) => {
+      const card = new THREE.Mesh(longCard ? CHAR_GEOS.hairCardLong : CHAR_GEOS.hairCard, hairCardMat);
+      card.position.set(x, y, z);
+      card.rotation.set(rx, ry, rz);
+      card.scale.set(sx, sy, 1);
+      hairCardGroup.add(card);
+    };
 
     if (hairStyle === 'short_part' || hairStyle === 'fade') {
       const fringe = new THREE.Mesh(CHAR_GEOS.hairFringe, hairMat);
       fringe.rotation.z = Math.PI / 2 - 0.14;
-      fringe.position.set(0.008, 0.228, 0.048);
+      fringe.position.set(0.008, 0.224, 0.047);
       fringe.scale.set(hairStyle === 'fade' ? 0.55 : 0.72, 1, 0.72);
       head.add(fringe);
 
+      // Feathered front hairline & temple strand cards
+      addHairCard(-0.022, 0.246, 0.056, -0.28, -0.18, 0.14, 1.05, 0.72);
+      addHairCard(0.022, 0.248, 0.054, -0.26, 0.20, -0.16, 1.05, 0.68);
       if (hairStyle === 'short_part') {
-        [-0.072, 0.072].forEach((sx) => {
+        [-0.070, 0.070].forEach((sx) => {
           const sb = new THREE.Mesh(CHAR_GEOS.hairSideburn, hairMat);
-          sb.position.set(sx, 0.154, 0.014);
+          sb.position.set(sx, 0.152, 0.014);
           head.add(sb);
+          addHairCard(sx * 1.04, 0.195, 0.016, 0.04, sx < 0 ? -Math.PI * 0.45 : Math.PI * 0.45, 0, 0.75, 0.78);
         });
       }
     } else if (hairStyle === 'spiky') {
       const spikePositions: Array<[number, number, number, number]> = [
-        [-0.024, 0.256, 0.028, 0.25],
-        [0.020, 0.262, 0.016, -0.18],
-        [0.0, 0.260, -0.020, -0.35],
-        [-0.038, 0.242, -0.008, 0.40],
-        [0.038, 0.242, 0.020, -0.35],
+        [-0.024, 0.252, 0.028, 0.25],
+        [0.020, 0.258, 0.016, -0.18],
+        [0.0, 0.256, -0.020, -0.35],
+        [-0.038, 0.238, -0.008, 0.40],
+        [0.038, 0.238, 0.020, -0.35],
       ];
       spikePositions.forEach(([sx, sy, sz, rz]) => {
         const sp = new THREE.Mesh(CHAR_GEOS.hairSpike, hairMat);
@@ -2202,17 +2352,20 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
         sp.rotation.x = 0.25;
         head.add(sp);
       });
+      addHairCard(0, 0.250, 0.055, -0.35, 0, 0.08, 1.1, 0.75);
+      addHairCard(-0.042, 0.238, 0.036, -0.2, -0.45, 0.22, 0.9, 0.75);
+      addHairCard(0.042, 0.238, 0.036, -0.2, 0.45, -0.22, 0.9, 0.75);
     } else if (hairStyle === 'curly') {
       const curlOffsets: Array<[number, number, number, number]> = [
-        [0, 0.252, 0.032, 1.02],
-        [-0.042, 0.242, 0.020, 0.92],
-        [0.042, 0.242, 0.020, 0.92],
-        [-0.066, 0.208, -0.006, 0.88],
-        [0.066, 0.208, -0.006, 0.88],
-        [-0.036, 0.244, -0.038, 0.96],
-        [0.036, 0.244, -0.038, 0.96],
-        [0, 0.226, -0.072, 1.02],
-        [0, 0.236, 0.062, 0.82],
+        [0, 0.248, 0.032, 1.0],
+        [-0.040, 0.238, 0.020, 0.90],
+        [0.040, 0.238, 0.020, 0.90],
+        [-0.064, 0.205, -0.006, 0.86],
+        [0.064, 0.205, -0.006, 0.86],
+        [-0.035, 0.240, -0.038, 0.94],
+        [0.035, 0.240, -0.038, 0.94],
+        [0, 0.222, -0.070, 1.0],
+        [0, 0.232, 0.060, 0.80],
       ];
       curlOffsets.forEach(([cx, cy, cz, sc]) => {
         const clump = new THREE.Mesh(CHAR_GEOS.curlyClump, hairMat);
@@ -2220,64 +2373,78 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
         clump.scale.setScalar(sc);
         head.add(clump);
       });
+      addHairCard(-0.025, 0.242, 0.066, -0.24, -0.15, 0.1, 0.95, 0.65);
+      addHairCard(0.025, 0.242, 0.066, -0.24, 0.15, -0.1, 0.95, 0.65);
     } else if (hairStyle === 'bob') {
       const fringe = new THREE.Mesh(CHAR_GEOS.hairFringe, hairMat);
       fringe.rotation.z = Math.PI / 2 - 0.1;
-      fringe.position.set(0, 0.226, 0.050);
+      fringe.position.set(0, 0.222, 0.049);
       fringe.scale.set(0.68, 1.0, 0.70);
       const bobBack = new THREE.Mesh(CHAR_GEOS.bobBack, hairMat);
-      bobBack.position.set(0, 0.105, -0.024);
+      bobBack.position.set(0, 0.104, -0.024);
       bobBack.scale.set(0.95, 1.0, 0.95);
       const bobL = new THREE.Mesh(CHAR_GEOS.bobSide, hairMat);
-      bobL.position.set(-0.074, 0.112, 0.008);
+      bobL.position.set(-0.072, 0.110, 0.008);
       bobL.rotation.z = -0.08;
       const bobR = new THREE.Mesh(CHAR_GEOS.bobSide, hairMat);
-      bobR.position.set(0.074, 0.112, 0.008);
+      bobR.position.set(0.072, 0.110, 0.008);
       bobR.rotation.z = 0.08;
       head.add(fringe, bobBack, bobL, bobR);
+
+      // Feathered bangs & jaw-grazing layered bob strand cards
+      addHairCard(-0.022, 0.240, 0.056, -0.22, -0.15, 0.08, 1.05, 0.72);
+      addHairCard(0.022, 0.240, 0.056, -0.22, 0.15, -0.08, 1.05, 0.72);
+      addHairCard(-0.078, 0.185, 0.015, 0.04, -Math.PI * 0.45, -0.06, 1.05, 1.02, true);
+      addHairCard(0.078, 0.185, 0.015, 0.04, Math.PI * 0.45, 0.06, 1.05, 1.02, true);
     } else if (hairStyle === 'undercut') {
       hairCap.scale.set(0.82, 1.12, 1.02);
       const topWave = new THREE.Mesh(CHAR_GEOS.undercutTop, hairMat);
-      topWave.position.set(0, 0.228, 0.010);
+      topWave.position.set(0, 0.224, 0.010);
       topWave.rotation.x = -0.14;
       head.add(topWave);
+      addHairCard(0.010, 0.246, 0.066, -0.32, 0.12, -0.14, 1.15, 0.72);
     } else if (hairStyle === 'ponytail') {
       const fringe = new THREE.Mesh(CHAR_GEOS.hairFringe, hairMat);
       fringe.rotation.z = Math.PI / 2;
-      fringe.position.set(0, 0.224, 0.050);
+      fringe.position.set(0, 0.220, 0.049);
       fringe.scale.set(0.62, 1.0, 0.68);
       const band = new THREE.Mesh(CHAR_GEOS.hairBand, collarMat);
-      band.position.set(0, 0.172, -0.102);
+      band.position.set(0, 0.170, -0.100);
       band.rotation.x = 0.35;
       const tail = new THREE.Mesh(CHAR_GEOS.ponytail, hairMat);
-      tail.position.set(0, 0.105, -0.128);
+      tail.position.set(0, 0.104, -0.125);
       tail.rotation.x = 0.28;
       head.add(fringe, band, tail);
+      addHairCard(-0.064, 0.188, 0.022, 0.04, -Math.PI * 0.42, 0.10, 0.85, 0.90);
+      addHairCard(0.064, 0.188, 0.022, 0.04, Math.PI * 0.42, -0.10, 0.85, 0.90);
+      addHairCard(0, 0.168, -0.115, 0.30, Math.PI, 0, 1.1, 1.08, true);
     } else if (hairStyle === 'bun_konde') {
       const konde = new THREE.Mesh(CHAR_GEOS.kondeBun, hairMat);
-      konde.position.set(0, 0.120, -0.114);
+      konde.position.set(0, 0.118, -0.112);
       konde.scale.set(1.04, 0.92, 0.88);
       const pin = new THREE.Mesh(CHAR_GEOS.hairBand, SHARED_CHAR_MATS.buckle);
-      pin.position.set(0, 0.120, -0.098);
+      pin.position.set(0, 0.118, -0.096);
       head.add(konde, pin);
+      addHairCard(-0.062, 0.192, 0.020, 0.02, -Math.PI * 0.42, 0.08, 0.78, 0.72);
+      addHairCard(0.062, 0.192, 0.020, 0.02, Math.PI * 0.42, -0.08, 0.78, 0.72);
     }
   }
 
   // Fitted Headgear
   if (options.hatType === 'caping') {
     const caping = new THREE.Mesh(CHAR_GEOS.caping, SHARED_CHAR_MATS.caping);
-    caping.position.y = 0.295;
+    caping.position.y = 0.288;
     head.add(caping);
   } else if (options.hatType === 'peci') {
     const peci = new THREE.Mesh(CHAR_GEOS.peci, SHARED_CHAR_MATS.peci);
-    peci.position.set(0, 0.252, -0.005);
+    peci.position.set(0, 0.246, -0.005);
     peci.scale.set(0.95, 1, 1.12);
     head.add(peci);
   } else if (options.hatType === 'polisi') {
     const cap = new THREE.Mesh(CHAR_GEOS.policeCap, SHARED_CHAR_MATS.policeCap);
-    cap.position.set(0, 0.254, -0.004);
+    cap.position.set(0, 0.248, -0.004);
     const brim = new THREE.Mesh(CHAR_GEOS.policeBrim, SHARED_CHAR_MATS.policeBrim);
-    brim.position.set(0, 0.218, 0.036);
+    brim.position.set(0, 0.214, 0.036);
     brim.rotation.x = 0.15;
     head.add(cap, brim);
   } else if (options.hatType === 'topi') {
@@ -2285,10 +2452,10 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
       CHAR_GEOS.topiCrown,
       new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.72 })
     );
-    topi.position.set(0, 0.182, -0.005);
+    topi.position.set(0, 0.178, -0.005);
     topi.scale.set(0.92, 1.0, 1.06);
     const brim = new THREE.Mesh(CHAR_GEOS.policeBrim, SHARED_CHAR_MATS.policeBrim);
-    brim.position.set(0, 0.195, 0.038);
+    brim.position.set(0, 0.191, 0.038);
     brim.rotation.x = 0.12;
     head.add(topi, brim);
   } else if (options.hatType === 'helm') {
@@ -2298,11 +2465,56 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
       metalness: 0.35,
     });
     const shell = new THREE.Mesh(CHAR_GEOS.helmetShell, helmMat);
-    shell.position.set(0, 0.158, -0.008);
+    shell.position.set(0, 0.156, -0.008);
     shell.scale.set(0.96, 1.08, 1.06);
     const visor = new THREE.Mesh(CHAR_GEOS.helmetVisor, SHARED_CHAR_MATS.visor);
-    visor.position.set(0, 0.165, 0.008);
+    visor.position.set(0, 0.163, 0.008);
     head.add(shell, visor);
+  }
+
+  const realism: CharacterRealismHandle = {
+    leftEye: leftEyeObj,
+    rightEye: rightEyeObj,
+    leftEyelidPivot,
+    rightEyelidPivot,
+    detailGroup,
+    hairCardGroup,
+    glbRoot: null,
+    glbMixer: null,
+    glbIdleAction: null,
+    glbWalkAction: null,
+  };
+
+  // Hybrid GLB Realistic Human Base (active on Seimbang/Tinggi when a GLB URL is configured, safe fallback to procedural rig)
+  if (options.customGlbUrl && tier !== 'lancar') {
+    void loadRealisticHumanGlb(options.customGlbUrl).then((loaded) => {
+      if (!loaded || !group.parent) return;
+      bodyGroup.visible = false;
+      realism.glbRoot = loaded.scene;
+      group.add(loaded.scene);
+      if (loaded.animations.length > 0) {
+        const mixer = new THREE.AnimationMixer(loaded.scene);
+        const idleClip =
+          THREE.AnimationClip.findByName(loaded.animations, 'Idle') ??
+          THREE.AnimationClip.findByName(loaded.animations, 'idle') ??
+          loaded.animations[0];
+        const walkClip =
+          THREE.AnimationClip.findByName(loaded.animations, 'Walk') ??
+          THREE.AnimationClip.findByName(loaded.animations, 'walk') ??
+          THREE.AnimationClip.findByName(loaded.animations, 'Run') ??
+          loaded.animations[0];
+        const idleAct = mixer.clipAction(idleClip);
+        const walkAct = mixer.clipAction(walkClip);
+        idleAct.play();
+        if (walkClip !== idleClip) {
+          walkAct.setEffectiveWeight(0);
+          walkAct.play();
+          realism.glbWalkAction = walkAct;
+        }
+        realism.glbIdleAction = idleAct;
+        realism.glbMixer = mixer;
+      }
+    });
   }
 
   return {
@@ -2328,6 +2540,7 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
     pantsMeshes,
     outfitDecorGroup,
     collarMesh: collar,
+    realism,
   };
 }
 
@@ -2367,7 +2580,9 @@ export function applyOutfitToRig(
 
 export function characterProfileToBuildOptions(
   profile: CharacterProfile,
-  textures?: ProceduralTexturePack
+  textures?: ProceduralTexturePack,
+  qualityTier?: CharacterQualityTier,
+  customGlbUrl?: string
 ): CharacterBuildOptions {
   return {
     gender: profile.gender,
@@ -2387,6 +2602,8 @@ export function characterProfileToBuildOptions(
     hasMustache: profile.hasMustache,
     hasBackpack: profile.hasBackpack,
     textures,
+    qualityTier,
+    customGlbUrl,
   };
 }
 

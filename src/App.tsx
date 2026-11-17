@@ -58,13 +58,13 @@ function formatCloudError(err: unknown): string {
     return 'Permintaan login sadurunge dibatalake. Klik Masuk Google sepisan maneh.';
   }
   if (combined.includes('popup-blocked')) {
-    return 'Popup login diblokir browser. Izinke popup utawa gunakake ID Pemain + PIN.';
+    return 'Popup login Google diblokir browser. Izinke popup ing browser utawa aktifake Email/Password ing Firebase Console.';
   }
   if (combined.includes('unauthorized-domain')) {
-    return `Domain (${window.location.hostname}) durung didhaftarake ing Firebase Google Login. Gunakake ID Pemain + PIN supaya langsung nyambung.`;
+    return `Domain (${window.location.hostname}) durung didhaftarake ing Firebase Authorized Domains.`;
   }
   if (combined.includes('operation-not-allowed')) {
-    return 'Metode login iki durung diaktifake ing Firebase Authentication.';
+    return 'Login ID Pemain + PIN butuh fitur Email/Password diaktifake ing Firebase Console (Authentication → Sign-in method → Email/Password). Gunakake "Masuk nganggo Google" kanggo langsung mlebu saiki.';
   }
   if (
     combined.includes('web-storage-unsupported') ||
@@ -95,6 +95,7 @@ export default function App() {
   const [hud, setHud] = useState<GameHudState | null>(null);
   const [drawerTab, setDrawerTab] = useState<DrawerTab | null>(null);
   const [showCharacterCreator, setShowCharacterCreator] = useState(false);
+  const [customGlbUrl, setCustomGlbUrl] = useState<string | null>(null);
 
   const [cloudUser, setCloudUser] = useState<CloudUserInfo | null>(null);
   const [cloudSaveData, setCloudSaveData] = useState<SaveData | null>(null);
@@ -229,6 +230,8 @@ export default function App() {
       await signOutUser();
       setDrawerTab(null);
       setShowCharacterCreator(false);
+      setCustomGlbUrl(null);
+      engineRef.current?.setCustomGlbUrl(null);
       engineRef.current?.resetToMenuOnSignOut();
     } catch (err) {
       setCloudError(formatCloudError(err));
@@ -429,6 +432,12 @@ export default function App() {
       {hud && showCharacterCreator && (
         <CharacterCreatorModal
           initialProfile={hud.character}
+          graphicsMode={hud.graphicsMode}
+          initialCustomGlbUrl={customGlbUrl}
+          onChangeCustomGlbUrl={(url) => {
+            setCustomGlbUrl(url);
+            engineRef.current?.setCustomGlbUrl(url);
+          }}
           onSave={(profile) => void handleSaveCharacter(profile)}
           onClose={() => setShowCharacterCreator(false)}
         />

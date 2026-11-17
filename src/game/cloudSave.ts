@@ -186,20 +186,49 @@ export async function fetchCloudSave(userId: string): Promise<SaveData | null> {
   }
 }
 
+const CLOUD_SAVE_SCHEMA_KEYS = [
+  'ownerId',
+  'version',
+  'createdAt',
+  'updatedAt',
+  'savedAt',
+  'language',
+  'health',
+  'stamina',
+  'money',
+  'xp',
+  'reputation',
+  'timeOfDay',
+  'weather',
+  'playerX',
+  'playerZ',
+  'outfit',
+  'ownedOutfits',
+  'character',
+  'inventoryCounts',
+  'activeMissionId',
+  'activeStepIndex',
+  'completedMissionIds',
+  'discoveredLandmarks',
+] as const;
+const CLOUD_SAVE_KEY_SET = new Set<string>(CLOUD_SAVE_SCHEMA_KEYS);
+
 export async function upsertCloudSave(userId: string, saveData: SaveData): Promise<string> {
   const path = `saves/${userId}`;
   const saveRef = doc(db, 'saves', userId);
   const fields = sanitizeFields(saveData);
 
   let exists = false;
+  let existingData: Record<string, unknown> | null = null;
   try {
     const snap = await getDoc(saveRef);
     exists = snap.exists();
+    existingData = exists ? (snap.data() as Record<string, unknown>) : null;
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
   }
 
-  if (!exists) {
+  if (!exists || !existingData) {
     try {
       await setDoc(saveRef, {
         ownerId: userId,
@@ -211,13 +240,38 @@ export async function upsertCloudSave(userId: string, saveData: SaveData): Promi
       handleFirestoreError(error, OperationType.CREATE, path);
     }
   } else {
-    try {
-      await updateDoc(saveRef, {
-        ...fields,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+    const existingKeys = Object.keys(existingData);
+    const hasExactSchema =
+      existingData.ownerId === userId &&
+      existingData.createdAt != null &&
+      existingKeys.length === CLOUD_SAVE_SCHEMA_KEYS.length &&
+      existingKeys.every((k) => CLOUD_SAVE_KEY_SET.has(k));
+
+    if (hasExactSchema) {
+      try {
+        await updateDoc(saveRef, {
+          ...fields,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    } else {
+      const existingCreatedAt = existingData.createdAt;
+      const isTimestampLike =
+        Boolean(existingCreatedAt) &&
+        typeof existingCreatedAt === 'object' &&
+        'seconds' in (existingCreatedAt as Record<string, unknown>);
+      try {
+        await setDoc(saveRef, {
+          ownerId: userId,
+          ...fields,
+          createdAt: isTimestampLike ? existingCreatedAt : serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
     }
   }
 

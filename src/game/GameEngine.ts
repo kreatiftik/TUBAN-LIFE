@@ -53,6 +53,12 @@ import { DEFAULT_CHARACTER_PROFILE, sanitizeCharacterProfile } from './character
 import { TubanMultiplayerClient } from './multiplayer';
 import { buildJawaWorld } from './worldBuilder';
 import { JawaAudioEngine } from './audio';
+import {
+  CharacterQualityTier,
+  CharacterRealismState,
+  createCharacterRealismState,
+  updateCharacterRealism,
+} from './humanRealism';
 
 // Pre-allocated math helpers for zero GC in render loop
 const _vec3 = new THREE.Vector3();
@@ -85,6 +91,7 @@ interface RemotePlayerRuntime {
   group: THREE.Group;
   rig: CharacterRig;
   anim: CharacterAnimState;
+  realism: CharacterRealismState;
   nameSprite: THREE.Sprite;
   chatSprite: THREE.Sprite | null;
   chatExpiresAt: number;
@@ -137,6 +144,7 @@ interface NpcRuntime {
   yaw: number;
   patrolAngle: number;
   anim: CharacterAnimState;
+  realism: CharacterRealismState;
 }
 
 export class GameEngine {
@@ -188,6 +196,8 @@ export class GameEngine {
   private playerYaw = 0;
   private isGrounded = true;
   private playerAnim: CharacterAnimState = createAnimState();
+  private playerRealism: CharacterRealismState = createCharacterRealismState(0);
+  private playerCustomGlbUrl: string | null = null;
 
   // Camera orbit
   private camYaw = 0;
@@ -367,7 +377,12 @@ export class GameEngine {
 
     // Custom player character rig
     this.playerRig = createCharacterRig(
-      characterProfileToBuildOptions(this.state.character, this.textures)
+      characterProfileToBuildOptions(
+        this.state.character,
+        this.textures,
+        this.getEffectiveQualityTier(),
+        this.playerCustomGlbUrl ?? undefined
+      )
     );
     this.playerY = surfaceHeightAt(this.playerX, this.playerZ);
     this.playerRig.group.position.set(this.playerX, this.playerY, this.playerZ);
@@ -402,24 +417,7 @@ export class GameEngine {
 
     // Spawn Detailed Varied NPCs (procedurally randomized hair, clothing colors & pants styles per archetype)
     NPC_SPAWNS.forEach((spawn) => {
-      const rig = createCharacterRig({
-        shirtColor: spawn.shirtColor,
-        pantsColor: spawn.pantsColor,
-        skinColor: spawn.skinColor,
-        hairColor: spawn.hairColor,
-        hairStyle: spawn.hairStyle,
-        shirtStyle: spawn.shirtStyle,
-        pantsStyle: spawn.pantsStyle,
-        shoeStyle: spawn.shoeStyle,
-        hatType: spawn.hatType,
-        hasMustache: spawn.hasMustache,
-        hasGlasses: spawn.hasGlasses,
-        hasBackpack: spawn.hasBackpack,
-        hasNeckTowel: spawn.hasNeckTowel,
-        archetype: spawn.archetype,
-        randomize: true,
-        textures: this.textures,
-      });
+      const rig = this.createNpcRig(spawn);
       const gy = surfaceHeightAt(spawn.x, spawn.z);
       rig.group.position.set(spawn.x, gy, spawn.z);
       rig.group.rotation.y = spawn.yaw;
@@ -434,6 +432,7 @@ export class GameEngine {
         yaw: spawn.yaw,
         patrolAngle: phaseOffset,
         anim: createAnimState(phaseOffset),
+        realism: createCharacterRealismState(phaseOffset),
       });
     });
 
@@ -504,6 +503,7 @@ export class GameEngine {
           archetype: 'rider',
           randomize: true,
           textures: this.textures,
+          qualityTier: 'lancar',
         });
         riderRig.bodyGroup.position.y = 0;
         riderRig.pelvisGroup.rotation.set(0, 0, 0);
@@ -1079,6 +1079,14 @@ export class GameEngine {
       turnRate * 0.42,
       dt
     );
+    updateCharacterRealism(
+      this.playerRig.realism,
+      this.playerRealism,
+      dt,
+      this.getEffectiveQualityTier(),
+      0,
+      isMoving
+    );
 
     this.state.playerX = this.playerX;
     this.state.playerY = this.playerY;
@@ -1312,6 +1320,14 @@ export class GameEngine {
       this.playerRig.rightElbow.rotation.x = -0.45;
       this.playerRig.leftWrist.rotation.x = 0.18;
       this.playerRig.rightWrist.rotation.x = 0.18;
+      updateCharacterRealism(
+        this.playerRig.realism,
+        this.playerRealism,
+        dt,
+        this.getEffectiveQualityTier(),
+        0,
+        Math.abs(veh.speed) > 0.5
+      );
     } else {
       this.playerRig.group.visible = false;
     }
@@ -1401,6 +1417,7 @@ export class GameEngine {
 
   private updateNpcs(dt: number) {
     const isNight = this.state.timeOfDay < 5.5 || this.state.timeOfDay > 19.5;
+    const tier = this.getEffectiveQualityTier();
     for (const npc of this.npcs) {
       const distSq = (this.playerX - npc.x) ** 2 + (this.playerZ - npc.z) ** 2;
       // Hide distant NPCs (> 135m) to save GPU draw calls
@@ -1410,7 +1427,8 @@ export class GameEngine {
       }
       npc.rig.group.visible = true;
 
-      if (npc.spawn.patrolRadius && npc.spawn.patrolRadius > 0) {
+      const isPatrolling = Boolean(npc.spawn.patrolRadius && npc.spawn.patrolRadius > 0);
+      if (isPatrolling && npc.spawn.patrolRadius) {
         const walkSpeed = isNight ? 0.25 : 0.65;
         npc.patrolAngle += dt * walkSpeed * 0.45;
         const tx = npc.spawn.x + Math.cos(npc.patrolAngle) * npc.spawn.patrolRadius;
@@ -1450,6 +1468,10 @@ export class GameEngine {
         if (distSq < 8100) {
           this.animateHumanRig(npc.rig, npc.anim, 0, 0, true, 0, headTargetYaw, dt);
         }
+      }
+
+      if (distSq < 8100) {
+        updateCharacterRealism(npc.rig.realism, npc.realism, dt, tier, distSq, isPatrolling);
       }
     }
   }
@@ -2092,13 +2114,53 @@ export class GameEngine {
     this.showLocalChatBubble(clean);
   }
 
+  private getEffectiveQualityTier(): CharacterQualityTier {
+    return this.isSoftwareGl ? 'lancar' : this.state.graphicsMode;
+  }
+
+  private createNpcRig(spawn: NpcSpawn): CharacterRig {
+    return createCharacterRig({
+      shirtColor: spawn.shirtColor,
+      pantsColor: spawn.pantsColor,
+      skinColor: spawn.skinColor,
+      hairColor: spawn.hairColor,
+      hairStyle: spawn.hairStyle,
+      shirtStyle: spawn.shirtStyle,
+      pantsStyle: spawn.pantsStyle,
+      shoeStyle: spawn.shoeStyle,
+      hatType: spawn.hatType,
+      hasMustache: spawn.hasMustache,
+      hasGlasses: spawn.hasGlasses,
+      hasBackpack: spawn.hasBackpack,
+      hasNeckTowel: spawn.hasNeckTowel,
+      archetype: spawn.archetype,
+      randomize: true,
+      textures: this.textures,
+      qualityTier: this.getEffectiveQualityTier(),
+    });
+  }
+
+  public setCustomGlbUrl(url: string | null) {
+    this.playerCustomGlbUrl = url;
+    this.rebuildPlayerRig();
+  }
+
+  public getCustomGlbUrl(): string | null {
+    return this.playerCustomGlbUrl;
+  }
+
   private rebuildPlayerRig() {
     const wasVisible = this.playerRig ? this.playerRig.group.visible : true;
     if (this.playerRig) {
       this.scene.remove(this.playerRig.group);
     }
     this.playerRig = createCharacterRig(
-      characterProfileToBuildOptions(this.state.character, this.textures)
+      characterProfileToBuildOptions(
+        this.state.character,
+        this.textures,
+        this.getEffectiveQualityTier(),
+        this.playerCustomGlbUrl ?? undefined
+      )
     );
     this.playerRig.group.visible = wasVisible;
     this.playerRig.group.position.set(this.playerX, this.playerY, this.playerZ);
@@ -2107,6 +2169,30 @@ export class GameEngine {
       this.playerRig.group.add(this.localChatSprite);
     }
     this.scene.add(this.playerRig.group);
+  }
+
+  private rebuildAllCharactersForQuality() {
+    this.rebuildPlayerRig();
+    for (const npc of this.npcs) {
+      const wasVis = npc.rig.group.visible;
+      this.scene.remove(npc.rig.group);
+      const nextRig = this.createNpcRig(npc.spawn);
+      nextRig.group.position.set(npc.x, npc.y, npc.z);
+      nextRig.group.rotation.y = npc.yaw;
+      nextRig.group.visible = wasVis;
+      this.scene.add(nextRig.group);
+      npc.rig = nextRig;
+    }
+    const tier = this.getEffectiveQualityTier();
+    for (const rp of this.remotePlayers.values()) {
+      rp.group.remove(rp.rig.group);
+      rp.rig = createCharacterRig(
+        characterProfileToBuildOptions(rp.info.character, this.textures, tier)
+      );
+      rp.rig.group.rotation.y = rp.curYaw;
+      rp.group.add(rp.rig.group);
+      this.syncRemoteVehicleModel(rp);
+    }
   }
 
   private showLocalChatBubble(text: string) {
@@ -2185,13 +2271,14 @@ export class GameEngine {
     } else {
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
       this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = THREE.PCFShadowMap;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       this.sunLight.castShadow = true;
       this.sunLight.shadow.mapSize.set(1024, 1024);
       this.sunLight.shadow.map?.dispose();
       this.sunLight.shadow.map = null;
       this.renderer.shadowMap.needsUpdate = true;
     }
+    this.rebuildAllCharactersForQuality();
     this.handleResize();
     this.showToast(
       mode === 'lancar'
@@ -2442,7 +2529,11 @@ export class GameEngine {
           rp.info.character = sanitizeCharacterProfile(character);
           rp.group.remove(rp.rig.group);
           rp.rig = createCharacterRig(
-            characterProfileToBuildOptions(rp.info.character, this.textures)
+            characterProfileToBuildOptions(
+              rp.info.character,
+              this.textures,
+              this.getEffectiveQualityTier()
+            )
           );
           rp.group.add(rp.rig.group);
           rp.group.remove(rp.nameSprite);
@@ -2451,6 +2542,7 @@ export class GameEngine {
           rp.nameSprite = createFloatingLabelSprite(rp.info.character.name, 'name');
           rp.nameSprite.position.set(0, 2.22, 0);
           rp.group.add(rp.nameSprite);
+          this.syncRemoteVehicleModel(rp);
           this.emitHud();
         },
         onPlayerLeft: (id) => {
@@ -2492,7 +2584,9 @@ export class GameEngine {
     const gy = Number.isFinite(info.y) ? info.y : surfaceHeightAt(info.x, info.z);
     group.position.set(info.x, gy, info.z);
 
-    const rig = createCharacterRig(characterProfileToBuildOptions(cleanChar, this.textures));
+    const rig = createCharacterRig(
+      characterProfileToBuildOptions(cleanChar, this.textures, this.getEffectiveQualityTier())
+    );
     rig.group.rotation.y = info.yaw;
     group.add(rig.group);
 
@@ -2506,6 +2600,7 @@ export class GameEngine {
       group,
       rig,
       anim: createAnimState(Math.random() * Math.PI * 2),
+      realism: createCharacterRealismState(Math.random() * 5),
       nameSprite,
       chatSprite: null,
       chatExpiresAt: 0,
@@ -2577,6 +2672,7 @@ export class GameEngine {
 
   private updateRemotePlayers(dt: number) {
     const now = performance.now();
+    const tier = this.getEffectiveQualityTier();
     for (const rp of this.remotePlayers.values()) {
       rp.curX = THREE.MathUtils.damp(rp.curX, rp.targetX, 11, dt);
       rp.curY = THREE.MathUtils.damp(rp.curY, rp.targetY, 14, dt);
@@ -2584,6 +2680,7 @@ export class GameEngine {
       rp.curYaw = this.lerpAngle(rp.curYaw, rp.targetYaw, Math.min(1, 12 * dt));
       rp.group.position.set(rp.curX, rp.curY, rp.curZ);
 
+      const distSq = (this.playerX - rp.curX) ** 2 + (this.playerZ - rp.curZ) ** 2;
       const distMoved = Math.hypot(rp.targetX - rp.curX, rp.targetZ - rp.curZ);
       const effectiveSpeed = Math.max(rp.targetSpeed, distMoved * 6);
 
@@ -2609,12 +2706,14 @@ export class GameEngine {
           rp.rig.rightKnee.rotation.x = 1.05;
           rp.rig.leftArm.rotation.set(-0.65, 0, -0.14);
           rp.rig.rightArm.rotation.set(-0.65, 0, 0.14);
+          updateCharacterRealism(rp.rig.realism, rp.realism, dt, tier, distSq, effectiveSpeed > 0.4);
         }
       } else {
         rp.rig.group.rotation.y = rp.curYaw;
         const moveScale = THREE.MathUtils.clamp(effectiveSpeed / 5.2, 0, 1);
         const sprintBlend = effectiveSpeed > 6.5 ? 1 : 0;
         this.animateHumanRig(rp.rig, rp.anim, moveScale, sprintBlend, true, 0, 0, dt);
+        updateCharacterRealism(rp.rig.realism, rp.realism, dt, tier, distSq, effectiveSpeed > 0.25);
       }
 
       if (rp.chatSprite && now > rp.chatExpiresAt) {

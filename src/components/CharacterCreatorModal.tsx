@@ -3,10 +3,13 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
   Check,
+  Eye,
   Glasses,
   RefreshCw,
+  RotateCcw,
   RotateCw,
   Sparkles,
+  Upload,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -26,9 +29,17 @@ import {
   characterProfileToBuildOptions,
   createCharacterRig,
 } from '../game/models';
+import {
+  CharacterQualityTier,
+  createCharacterRealismState,
+  updateCharacterRealism,
+} from '../game/humanRealism';
 
 interface CharacterCreatorModalProps {
   initialProfile: CharacterProfile;
+  graphicsMode?: CharacterQualityTier;
+  initialCustomGlbUrl?: string | null;
+  onChangeCustomGlbUrl?: (url: string | null) => void;
   title?: string;
   subtitle?: string;
   submitLabel?: string;
@@ -90,6 +101,9 @@ function colorIntToCss(hexInt: number): string {
 
 export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
   initialProfile,
+  graphicsMode = 'seimbang',
+  initialCustomGlbUrl = null,
+  onChangeCustomGlbUrl,
   title = 'Gawe Karakter Dhewe',
   subtitle = 'Atur jeneng, gender, kerudung/rambut, klambi, celana, lan sepatu kanggo ketemu warga online ing Tuban.',
   submitLabel = 'Simpen Karakter',
@@ -102,12 +116,29 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
   );
   const [nameInput, setNameInput] = useState<string>(initialProfile.name || 'Bagas');
   const [nameError, setNameError] = useState<string | null>(null);
+  const [cameraFocus, setCameraFocus] = useState<'full' | 'face'>('full');
+  const [localGlbUrl, setLocalGlbUrl] = useState<string | null>(initialCustomGlbUrl);
+  const [localGlbName, setLocalGlbName] = useState<string | null>(
+    initialCustomGlbUrl ? 'Avatar Kustom (.GLB)' : null
+  );
 
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const glbInputRef = useRef<HTMLInputElement | null>(null);
   const rigHolderRef = useRef<THREE.Group | null>(null);
   const currentRigRef = useRef<CharacterRig | null>(null);
+  const realismStateRef = useRef(createCharacterRealismState(0.4));
+  const cameraFocusRef = useRef<'full' | 'face'>('full');
+  const qualityTierRef = useRef<CharacterQualityTier>(graphicsMode);
   const yawRef = useRef<number>(0.32);
   const dragRef = useRef<{ active: boolean; lastX: number }>({ active: false, lastX: 0 });
+
+  useEffect(() => {
+    cameraFocusRef.current = cameraFocus;
+  }, [cameraFocus]);
+
+  useEffect(() => {
+    qualityTierRef.current = graphicsMode;
+  }, [graphicsMode]);
 
   // Setup Three.js 3D Preview Stage once
   useEffect(() => {
@@ -217,22 +248,42 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
       frameId = window.setTimeout(poll, 5);
     };
 
+    let curLookY = 0.88;
     const animate = () => {
       if (disposed) return;
-      const t = clock.getElapsedTime();
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const t = clock.elapsedTime;
+
+      const isFace = cameraFocusRef.current === 'face';
+      const targetCamY = isFace ? 1.46 : 1.08;
+      const targetCamZ = isFace ? 0.92 : 2.9;
+      const targetLookY = isFace ? 1.44 : 0.88;
+      camera.position.y = THREE.MathUtils.damp(camera.position.y, targetCamY, 9, dt);
+      camera.position.z = THREE.MathUtils.damp(camera.position.z, targetCamZ, 9, dt);
+      curLookY = THREE.MathUtils.damp(curLookY, targetLookY, 9, dt);
+      camera.lookAt(0, curLookY, 0);
+
       holder.rotation.y = yawRef.current;
       const rig = currentRigRef.current;
       if (rig) {
-        rig.spineGroup.rotation.x = Math.sin(t * 2.1) * 0.014;
-        rig.head.rotation.y = Math.sin(t * 0.85) * 0.07;
-        rig.leftArm.rotation.x = Math.sin(t * 1.6) * 0.028;
-        rig.rightArm.rotation.x = -Math.sin(t * 1.6) * 0.028;
+        rig.spineGroup.rotation.x = Math.sin(t * 2.1) * 0.012;
+        rig.head.rotation.y = Math.sin(t * 0.85) * (isFace ? 0.035 : 0.07);
+        rig.leftArm.rotation.x = Math.sin(t * 1.6) * 0.025;
+        rig.rightArm.rotation.x = -Math.sin(t * 1.6) * 0.025;
         rig.leftArm.rotation.z = -0.115;
         rig.rightArm.rotation.z = 0.115;
         rig.leftElbow.rotation.x = -0.22;
         rig.rightElbow.rotation.x = -0.22;
         rig.leftLeg.rotation.z = -0.032;
         rig.rightLeg.rotation.z = 0.032;
+        updateCharacterRealism(
+          rig.realism,
+          realismStateRef.current,
+          dt,
+          qualityTierRef.current,
+          0,
+          false
+        );
       }
       renderer.render(scene, camera);
       if (isSoftwareGl) afterDraw(animate);
@@ -259,7 +310,7 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
     };
   }, []);
 
-  // Rebuild 3D rig whenever character profile draft changes (never disposes shared CHAR_GEOS)
+  // Rebuild 3D rig whenever character profile draft, graphics tier, or hybrid GLB URL changes (never disposes shared CHAR_GEOS)
   useEffect(() => {
     const holder = rigHolderRef.current;
     if (!holder) return;
@@ -267,10 +318,17 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
       holder.remove(currentRigRef.current.group);
       currentRigRef.current = null;
     }
-    const nextRig = createCharacterRig(characterProfileToBuildOptions(draft));
+    const nextRig = createCharacterRig(
+      characterProfileToBuildOptions(
+        draft,
+        undefined,
+        graphicsMode,
+        localGlbUrl ?? undefined
+      )
+    );
     holder.add(nextRig.group);
     currentRigRef.current = nextRig;
-  }, [draft]);
+  }, [draft, graphicsMode, localGlbUrl]);
 
   const handleGenderChange = (nextGender: CharacterProfile['gender']) => {
     setDraft((prev) => {
@@ -341,6 +399,20 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
     }));
   };
 
+  const handleGlbFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const objUrl = URL.createObjectURL(file);
+    setLocalGlbUrl(objUrl);
+    setLocalGlbName(file.name);
+    e.target.value = '';
+  };
+
+  const handleResetGlb = () => {
+    setLocalGlbUrl(null);
+    setLocalGlbName(null);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = nameInput.replace(/[^\p{L}\p{N}_\-. ]/gu, '').trim().slice(0, 20);
@@ -353,6 +425,7 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
       { ...draft, name: sanitizeCharacterName(cleaned, 'Warga Tuban') },
       cleaned
     );
+    onChangeCustomGlbUrl?.(localGlbUrl);
     onSave(finalProfile);
   };
 
@@ -390,6 +463,33 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-0 overflow-hidden">
           {/* Left: Live 3D Character Preview */}
           <div className="md:col-span-5 bg-[#0e1311] border-b md:border-b-0 md:border-r border-white/10 p-3 sm:p-4 flex flex-col gap-2.5 shrink-0">
+            <div className="flex items-center justify-between gap-2 bg-[#161b18] border border-white/10 rounded-xl px-2.5 py-1.5">
+              <span className="text-[11px] font-semibold text-[#cfc9bc] flex items-center gap-1.5">
+                <Eye className="w-3.5 h-3.5 text-[#f5b942]" />
+                <span>Fokus Kamera</span>
+              </span>
+              <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#0c100e] border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setCameraFocus('full')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
+                    cameraFocus === 'full' ? 'bg-[#d99b26] text-[#111311]' : 'text-[#cfc9bc]'
+                  }`}
+                >
+                  Full Badan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCameraFocus('face')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
+                    cameraFocus === 'face' ? 'bg-[#d99b26] text-[#111311]' : 'text-[#cfc9bc]'
+                  }`}
+                >
+                  Wajah Close-up
+                </button>
+              </div>
+            </div>
+
             <div
               ref={previewRef}
               onPointerDown={(e) => {
@@ -493,6 +593,54 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* Basis Avatar (Hibrida: Realistis Tuban vs Custom .GLB) */}
+            <div className="p-3 rounded-xl bg-[#181d1a] border border-white/10 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-[#f5f2eb]">
+                    Basis Avatar (Hibrida)
+                  </div>
+                  <div className="text-[11px] text-[#a8a195]">
+                    {localGlbUrl
+                      ? `Aktif: ${localGlbName ?? 'Custom .GLB'}`
+                      : 'Realistis Tuban (kulit PBR, mata berkedip, helai rambut)'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    ref={glbInputRef}
+                    type="file"
+                    accept=".glb,.gltf"
+                    onChange={handleGlbFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => glbInputRef.current?.click()}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#121614] hover:bg-white/10 border border-white/15 text-[11px] font-semibold text-[#f5f2eb] cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-[#f5b942]" />
+                    <span>Muat .GLB</span>
+                  </button>
+                  {localGlbUrl && (
+                    <button
+                      type="button"
+                      onClick={handleResetGlb}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#121614] hover:bg-red-950/50 border border-white/15 text-[11px] font-medium text-[#cfc9bc] cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+              {localGlbUrl && graphicsMode === 'lancar' && (
+                <p className="text-[11px] text-amber-300">
+                  Mode grafis Lancar aktif: otomatis menggunakan rig prosedural hemat FPS. Pilih mode Seimbang atau Tinggi di Pengaturan untuk menampilkan model .GLB.
+                </p>
+              )}
             </div>
 
             {/* Warna Kulit */}

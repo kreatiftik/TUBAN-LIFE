@@ -65,6 +65,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const [playerIdInput, setPlayerIdInput] = useState('');
   const [pinInput, setPinInput] = useState('');
   const [showPin, setShowPin] = useState(false);
+  const [showPinForm, setShowPinForm] = useState(false);
 
   const isBusy = cloudStatus === 'syncing';
 
@@ -148,14 +149,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 </button>
               </>
             ) : (
-              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-[#16211c] border border-emerald-500/35 text-xs sm:text-sm text-emerald-300 font-medium">
-                <Cloud className="w-4 h-4 shrink-0" />
+              <button
+                type="button"
+                onClick={onCloudSignIn}
+                disabled={isBusy}
+                className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-[#0c140e] font-semibold text-sm transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <LogIn className="w-4 h-4" />
                 <span>
-                  {language === 'indonesia'
-                    ? 'Masuk akun Online di bawah untuk bermain & Cloud Save.'
-                    : 'Masuk akun Online ing ngisor kanggo main & Cloud Save.'}
+                  {isBusy
+                    ? 'Nyambung...'
+                    : language === 'indonesia'
+                      ? 'Masuk Google & Main Online'
+                      : 'Masuk Google & Main Online'}
                 </span>
-              </div>
+              </button>
             )}
             <button
               type="button"
@@ -259,83 +267,100 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 </div>
               </>
             ) : (
-              <form onSubmit={handlePinSubmit} className="space-y-2.5">
+              <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span className="text-xs font-semibold text-[#f5f2eb]">
-                      Cloud Save Online (ID Pemain + PIN)
+                      Cloud Save & Akun Online
                     </span>
                   </div>
                   <button
                     type="button"
-                    onClick={onCloudSignIn}
-                    disabled={isBusy}
-                    className="text-[11px] text-[#b8b1a3] hover:text-[#f5b942] underline underline-offset-2 cursor-pointer disabled:opacity-50"
+                    onClick={() => setShowPinForm((v) => !v)}
+                    className="text-[11px] text-[#b8b1a3] hover:text-[#f5b942] underline underline-offset-2 cursor-pointer"
                   >
-                    Atau Masuk Google
+                    {showPinForm ? 'Tutup ID + PIN' : 'Opsi ID Pemain + PIN'}
                   </button>
                 </div>
                 <p className="text-[11px] text-[#a8a195]">
-                  Simpen progres online tanpa email/Google. Gawe ID unik + PIN minimal 6 karakter.
+                  Masuk nganggo akun Google kanggo main online, nggawe karakter 3D, lan nyimpen progres otomatis menyang Cloud.
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={playerIdInput}
-                    onChange={(e) => setPlayerIdInput(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    placeholder="ID Pemain (cth: bagas99)"
-                    autoComplete="username"
-                    maxLength={20}
-                    className="w-full px-3 py-2 rounded-lg bg-[#0c100e] border border-white/15 focus:border-[#d99b26] focus:outline-none text-xs text-[#f5f2eb] placeholder:text-[#726d64]"
-                  />
-                  <div className="relative">
-                    <input
-                      type={showPin ? 'text' : 'password'}
-                      value={pinInput}
-                      onChange={(e) => setPinInput(e.target.value)}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      placeholder="PIN (min. 6 angka/huruf)"
-                      autoComplete="current-password"
-                      maxLength={32}
-                      className="w-full pl-3 pr-9 py-2 rounded-lg bg-[#0c100e] border border-white/15 focus:border-[#d99b26] focus:outline-none text-xs text-[#f5f2eb] placeholder:text-[#726d64]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPin((v) => !v)}
-                      aria-label={showPin ? 'Sembunyikan PIN' : 'Lihat PIN'}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9a9387] hover:text-[#f5f2eb] cursor-pointer"
-                    >
-                      {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={onCloudSignIn}
+                  disabled={isBusy}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-[#0c140e] text-xs font-semibold cursor-pointer"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{isBusy ? 'Nyambung...' : 'Masuk nganggo Google'}</span>
+                </button>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={isBusy}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#d99b26] hover:bg-[#e5aa38] disabled:opacity-60 text-[#111311] text-xs font-semibold cursor-pointer"
-                  >
-                    <LogIn className="w-3.5 h-3.5" />
-                    <span>{isBusy ? 'Nyambung...' : 'Masuk'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => onCloudPinRegister(playerIdInput, pinInput)}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1c231f] hover:bg-[#27312b] disabled:opacity-60 border border-white/12 text-[#f5f2eb] text-xs font-semibold cursor-pointer"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Daftar Baru</span>
-                  </button>
-                </div>
-              </form>
+                {showPinForm && (
+                  <form onSubmit={handlePinSubmit} className="space-y-2.5 pt-2.5 border-t border-white/10">
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#cfc9bc]">
+                      <KeyRound className="w-3.5 h-3.5 text-[#f5b942] shrink-0" />
+                      <span>ID Pemain + PIN (butuh Email/Password aktif ing Firebase)</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={playerIdInput}
+                        onChange={(e) => setPlayerIdInput(e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        placeholder="ID Pemain (cth: bagas99)"
+                        autoComplete="username"
+                        maxLength={20}
+                        className="w-full px-3 py-2 rounded-lg bg-[#0c100e] border border-white/15 focus:border-[#d99b26] focus:outline-none text-xs text-[#f5f2eb] placeholder:text-[#726d64]"
+                      />
+                      <div className="relative">
+                        <input
+                          type={showPin ? 'text' : 'password'}
+                          value={pinInput}
+                          onChange={(e) => setPinInput(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          placeholder="PIN (min. 6 angka/huruf)"
+                          autoComplete="current-password"
+                          maxLength={32}
+                          className="w-full pl-3 pr-9 py-2 rounded-lg bg-[#0c100e] border border-white/15 focus:border-[#d99b26] focus:outline-none text-xs text-[#f5f2eb] placeholder:text-[#726d64]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPin((v) => !v)}
+                          aria-label={showPin ? 'Sembunyikan PIN' : 'Lihat PIN'}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9a9387] hover:text-[#f5f2eb] cursor-pointer"
+                        >
+                          {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="submit"
+                        disabled={isBusy}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#d99b26] hover:bg-[#e5aa38] disabled:opacity-60 text-[#111311] text-xs font-semibold cursor-pointer"
+                      >
+                        <LogIn className="w-3.5 h-3.5" />
+                        <span>{isBusy ? 'Nyambung...' : 'Masuk'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => onCloudPinRegister(playerIdInput, pinInput)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1c231f] hover:bg-[#27312b] disabled:opacity-60 border border-white/12 text-[#f5f2eb] text-xs font-semibold cursor-pointer"
+                      >
+                        <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Daftar Baru</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             )}
 
-            {cloudError && <div className="text-[11px] text-red-400">{cloudError}</div>}
+            {cloudError && <div className="text-[11px] text-red-400 leading-relaxed">{cloudError}</div>}
           </div>
         </div>
 
