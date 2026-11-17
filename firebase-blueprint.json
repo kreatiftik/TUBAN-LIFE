@@ -1,0 +1,147 @@
+{
+  "entities": {
+    "CloudSave": {
+      "title": "CloudSave",
+      "description": "Persistent player game progress for JAWA LIFE stored per authenticated user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the save owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "version": {
+          "type": "integer",
+          "description": "Save schema version number."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when cloud save was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when cloud save was last updated."
+        },
+        "savedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp label of last save.",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "language": {
+          "type": "string",
+          "enum": ["ngoko", "krama", "indonesia"],
+          "description": "Selected UI and NPC dialogue language."
+        },
+        "health": {
+          "type": "number",
+          "description": "Current player health points."
+        },
+        "stamina": {
+          "type": "number",
+          "description": "Current player stamina points."
+        },
+        "money": {
+          "type": "number",
+          "description": "Current Rupiah currency balance."
+        },
+        "xp": {
+          "type": "number",
+          "description": "Accumulated experience points."
+        },
+        "reputation": {
+          "type": "number",
+          "description": "Village & city reputation score."
+        },
+        "timeOfDay": {
+          "type": "number",
+          "description": "In-game clock hour (0-24)."
+        },
+        "weather": {
+          "type": "string",
+          "enum": ["cerah", "hujan"],
+          "description": "Current weather state."
+        },
+        "playerX": {
+          "type": "number",
+          "description": "Player world X coordinate."
+        },
+        "playerZ": {
+          "type": "number",
+          "description": "Player world Z coordinate."
+        },
+        "outfit": {
+          "type": "string",
+          "enum": ["kasual", "batik", "jaket_motor", "lurik"],
+          "description": "Currently equipped outfit ID."
+        },
+        "ownedOutfits": {
+          "type": "array",
+          "description": "List of owned outfit IDs."
+        },
+        "character": {
+          "type": "object",
+          "description": "Custom player character appearance and name created by the user."
+        },
+        "inventoryCounts": {
+          "type": "object",
+          "description": "Map of inventory item IDs to positive integer quantities."
+        },
+        "activeMissionId": {
+          "type": "string",
+          "description": "Currently active mission ID or empty string when none.",
+          "maxLength": 64
+        },
+        "activeStepIndex": {
+          "type": "integer",
+          "description": "Zero-based index of the current mission step."
+        },
+        "completedMissionIds": {
+          "type": "array",
+          "description": "List of completed mission IDs."
+        },
+        "discoveredLandmarks": {
+          "type": "array",
+          "description": "List of discovered Tuban landmark IDs."
+        }
+      },
+      "required": [
+        "ownerId",
+        "version",
+        "createdAt",
+        "updatedAt",
+        "savedAt",
+        "language",
+        "health",
+        "stamina",
+        "money",
+        "xp",
+        "reputation",
+        "timeOfDay",
+        "weather",
+        "playerX",
+        "playerZ",
+        "outfit",
+        "ownedOutfits",
+        "character",
+        "inventoryCounts",
+        "activeMissionId",
+        "activeStepIndex",
+        "completedMissionIds",
+        "discoveredLandmarks"
+      ]
+    }
+  },
+  "firestore": {
+    "/saves/{userId}": {
+      "schema": { "$ref": "#/entities/CloudSave" },
+      "description": "Per-user cloud save slot storing game progress and custom character profile for TUBAN LIFE."
+    }
+  }
+}
+

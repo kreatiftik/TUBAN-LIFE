@@ -1,0 +1,325 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny all reads and writes by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && (
+        request.auth.token.email_verified == true ||
+        (
+          request.auth.token.firebase.sign_in_provider == 'password' &&
+          request.auth.token.email is string &&
+          request.auth.token.email.matches('^[a-z0-9_]{3,20}@save\\.jawalife\\.app$')
+        )
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidColorInt(val) {
+      return val is int && val >= 0 && val <= 16777215;
+    }
+
+    function isValidCharacter(c) {
+      return c is map
+        && c.keys().hasAll([
+          'name',
+          'gender',
+          'skinColor',
+          'hairStyle',
+          'hairColor',
+          'hijab',
+          'hijabColor',
+          'shirtStyle',
+          'shirtColor',
+          'pantsStyle',
+          'pantsColor',
+          'shoeStyle',
+          'shoeColor',
+          'hatType',
+          'hasGlasses',
+          'hasMustache',
+          'hasBackpack'
+        ])
+        && c.keys().hasOnly([
+          'name',
+          'gender',
+          'skinColor',
+          'hairStyle',
+          'hairColor',
+          'hijab',
+          'hijabColor',
+          'shirtStyle',
+          'shirtColor',
+          'pantsStyle',
+          'pantsColor',
+          'shoeStyle',
+          'shoeColor',
+          'hatType',
+          'hasGlasses',
+          'hasMustache',
+          'hasBackpack'
+        ])
+        && c.name is string
+        && c.name.size() >= 2
+        && c.name.size() <= 20
+        && c.gender is string
+        && c.gender.size() <= 16
+        && c.gender in ['laki', 'perempuan']
+        && isValidColorInt(c.skinColor)
+        && c.hairStyle is string
+        && c.hairStyle.size() <= 24
+        && c.hairStyle in [
+          'short_part',
+          'spiky',
+          'fade',
+          'curly',
+          'bob',
+          'undercut',
+          'ponytail',
+          'bun_konde',
+          'elder'
+        ]
+        && isValidColorInt(c.hairColor)
+        && c.hijab is bool
+        && isValidColorInt(c.hijabColor)
+        && c.shirtStyle is string
+        && c.shirtStyle.size() <= 24
+        && c.shirtStyle in ['tshirt', 'kemeja', 'batik', 'jaket', 'lurik', 'kebaya', 'seragam']
+        && isValidColorInt(c.shirtColor)
+        && c.pantsStyle is string
+        && c.pantsStyle.size() <= 24
+        && c.pantsStyle in ['jeans', 'celana_kain', 'sarung', 'shorts', 'cargo', 'kulot']
+        && isValidColorInt(c.pantsColor)
+        && c.shoeStyle is string
+        && c.shoeStyle.size() <= 24
+        && c.shoeStyle in ['sneakers', 'pantofel', 'sandal']
+        && isValidColorInt(c.shoeColor)
+        && c.hatType is string
+        && c.hatType.size() <= 16
+        && c.hatType in ['none', 'peci', 'caping', 'topi', 'helm']
+        && c.hasGlasses is bool
+        && c.hasMustache is bool
+        && c.hasBackpack is bool;
+    }
+
+    function isValidCloudSave(data) {
+      return data.keys().hasAll([
+        'ownerId',
+        'version',
+        'createdAt',
+        'updatedAt',
+        'savedAt',
+        'language',
+        'health',
+        'stamina',
+        'money',
+        'xp',
+        'reputation',
+        'timeOfDay',
+        'weather',
+        'playerX',
+        'playerZ',
+        'outfit',
+        'ownedOutfits',
+        'character',
+        'inventoryCounts',
+        'activeMissionId',
+        'activeStepIndex',
+        'completedMissionIds',
+        'discoveredLandmarks'
+      ])
+      && data.keys().hasOnly([
+        'ownerId',
+        'version',
+        'createdAt',
+        'updatedAt',
+        'savedAt',
+        'language',
+        'health',
+        'stamina',
+        'money',
+        'xp',
+        'reputation',
+        'timeOfDay',
+        'weather',
+        'playerX',
+        'playerZ',
+        'outfit',
+        'ownedOutfits',
+        'character',
+        'inventoryCounts',
+        'activeMissionId',
+        'activeStepIndex',
+        'completedMissionIds',
+        'discoveredLandmarks'
+      ])
+      && data.ownerId is string
+      && data.ownerId.size() >= 1
+      && data.ownerId.size() <= 128
+      && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+      && data.ownerId == request.auth.uid
+      && data.version is int
+      && data.version >= 1
+      && data.version <= 10
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp
+      && data.savedAt is string
+      && data.savedAt.size() >= 10
+      && data.savedAt.size() <= 40
+      && data.language is string
+      && data.language.size() <= 16
+      && data.language in ['ngoko', 'krama', 'indonesia']
+      && data.health is number
+      && data.health >= 0
+      && data.health <= 500
+      && data.stamina is number
+      && data.stamina >= 0
+      && data.stamina <= 500
+      && data.money is number
+      && data.money >= 0
+      && data.money <= 999999999
+      && data.xp is number
+      && data.xp >= 0
+      && data.xp <= 999999999
+      && data.reputation is number
+      && data.reputation >= 0
+      && data.reputation <= 999999
+      && data.timeOfDay is number
+      && data.timeOfDay >= 0
+      && data.timeOfDay <= 24
+      && data.weather is string
+      && data.weather.size() <= 16
+      && data.weather in ['cerah', 'hujan']
+      && data.playerX is number
+      && data.playerX >= -500
+      && data.playerX <= 500
+      && data.playerZ is number
+      && data.playerZ >= -500
+      && data.playerZ <= 500
+      && data.outfit is string
+      && data.outfit.size() <= 24
+      && data.outfit in ['kasual', 'batik', 'jaket_motor', 'lurik']
+      && data.ownedOutfits is list
+      && data.ownedOutfits.size() >= 1
+      && data.ownedOutfits.size() <= 6
+      && data.ownedOutfits.hasOnly(['kasual', 'batik', 'jaket_motor', 'lurik'])
+      && data.ownedOutfits[0] is string
+      && isValidCharacter(data.character)
+      && data.inventoryCounts is map
+      && data.inventoryCounts.size() <= 30
+      && data.activeMissionId is string
+      && data.activeMissionId.size() <= 64
+      && data.activeMissionId in [
+        '',
+        'misi_1_tangga',
+        'misi_2_kambing',
+        'misi_3_sekolah',
+        'misi_4_pasar',
+        'misi_5_nelayan',
+        'misi_6_wisata'
+      ]
+      && data.activeStepIndex is int
+      && data.activeStepIndex >= 0
+      && data.activeStepIndex <= 20
+      && data.completedMissionIds is list
+      && data.completedMissionIds.size() <= 10
+      && data.completedMissionIds.hasOnly([
+        'misi_1_tangga',
+        'misi_2_kambing',
+        'misi_3_sekolah',
+        'misi_4_pasar',
+        'misi_5_nelayan',
+        'misi_6_wisata'
+      ])
+      && (data.completedMissionIds.size() == 0 || data.completedMissionIds[0] is string)
+      && data.discoveredLandmarks is list
+      && data.discoveredLandmarks.size() <= 30
+      && data.discoveredLandmarks.hasOnly([
+        'lm_desa',
+        'lm_warung',
+        'lm_balai',
+        'lm_peternakan',
+        'lm_hutanjati',
+        'lm_spbu',
+        'lm_alun',
+        'lm_pendopo',
+        'lm_pasar',
+        'lm_toko_klambi',
+        'lm_bengkel',
+        'lm_polisi',
+        'lm_rs',
+        'lm_sunan_bonang',
+        'lm_masjid',
+        'lm_stasiun',
+        'lm_airterjun',
+        'lm_kebun_teh',
+        'lm_tpi',
+        'lm_seafood',
+        'lm_klenteng',
+        'lm_mercusuar',
+        'lm_candi',
+        'lm_danau',
+        'lm_bukit_wisata'
+      ])
+      && (data.discoveredLandmarks.size() == 0 || data.discoveredLandmarks[0] is string);
+    }
+
+    match /saves/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidCloudSave(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidCloudSave(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'version',
+          'updatedAt',
+          'savedAt',
+          'language',
+          'health',
+          'stamina',
+          'money',
+          'xp',
+          'reputation',
+          'timeOfDay',
+          'weather',
+          'playerX',
+          'playerZ',
+          'outfit',
+          'ownedOutfits',
+          'character',
+          'inventoryCounts',
+          'activeMissionId',
+          'activeStepIndex',
+          'completedMissionIds',
+          'discoveredLandmarks'
+        ]);
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+  }
+}
