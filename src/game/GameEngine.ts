@@ -155,6 +155,7 @@ export class GameEngine {
   private isSoftwareGl = false;
   private frameId = 0;
   private disposed = false;
+  private externalSuspended = false;
   private lastTime = performance.now();
 
   // Lighting
@@ -706,9 +707,27 @@ export class GameEngine {
     this.keys.delete(e.code);
   };
 
+  public setSuspended(suspended: boolean) {
+    if (this.externalSuspended === suspended) return;
+    this.externalSuspended = suspended;
+    if (suspended) {
+      cancelAnimationFrame(this.frameId);
+      clearTimeout(this.frameId);
+      this.frameId = 0;
+      this.renderer.domElement.style.display = 'none';
+    } else if (!this.disposed) {
+      this.renderer.domElement.style.display = '';
+      this.lastTime = performance.now();
+      this.handleResize();
+      this.startLoop();
+    }
+  }
+
   private startLoop() {
+    cancelAnimationFrame(this.frameId);
+    clearTimeout(this.frameId);
     const tick = () => {
-      if (this.disposed) return;
+      if (this.disposed || this.externalSuspended) return;
       const now = performance.now();
       const rawDt = (now - this.lastTime) / 1000;
       this.lastTime = now;
@@ -746,6 +765,8 @@ export class GameEngine {
         this.renderer.render(this.scene, this.camera);
         didDraw = true;
       }
+
+      if (this.externalSuspended || this.disposed) return;
 
       if (this.isSoftwareGl && didDraw) {
         this.afterDraw(tick);
@@ -1144,11 +1165,11 @@ export class GameEngine {
 
     const gLeftArmX = sinP * armAmp + breathe * 0.018 * (1 - m);
     const gRightArmX = -sinP * armAmp - breathe * 0.018 * (1 - m);
-    const gLeftElbowX = -0.16 - (0.16 + 0.48 * s) * m - Math.max(0, -sinP) * (0.28 + 0.35 * s) * m + breathe * 0.025 * (1 - m);
-    const gRightElbowX = -0.16 - (0.16 + 0.48 * s) * m - Math.max(0, sinP) * (0.28 + 0.35 * s) * m + breathe * 0.025 * (1 - m);
-    const gLeftWristX = 0.05 + sinP * 0.14 * m;
-    const gRightWristX = 0.05 - sinP * 0.14 * m;
-    const armOut = 0.075 + 0.032 * m + 0.03 * s;
+    const gLeftElbowX = -0.22 - (0.14 + 0.46 * s) * m - Math.max(0, -sinP) * (0.28 + 0.35 * s) * m + breathe * 0.025 * (1 - m);
+    const gRightElbowX = -0.22 - (0.14 + 0.46 * s) * m - Math.max(0, sinP) * (0.28 + 0.35 * s) * m + breathe * 0.025 * (1 - m);
+    const gLeftWristX = 0.06 + sinP * 0.14 * m;
+    const gRightWristX = 0.06 - sinP * 0.14 * m;
+    const armOut = 0.115 + 0.022 * m + 0.025 * s;
 
     // Blend smoothly with airborne jump pose
     const tLeftLegX = THREE.MathUtils.lerp(gLeftLegX, -0.45, air);
@@ -1177,8 +1198,8 @@ export class GameEngine {
     const dampSpeed = 18;
     rig.leftLeg.rotation.x = THREE.MathUtils.damp(rig.leftLeg.rotation.x, tLeftLegX, dampSpeed, safeDt);
     rig.rightLeg.rotation.x = THREE.MathUtils.damp(rig.rightLeg.rotation.x, tRightLegX, dampSpeed, safeDt);
-    rig.leftLeg.rotation.z = THREE.MathUtils.damp(rig.leftLeg.rotation.z, -0.022 * (1 - m), dampSpeed, safeDt);
-    rig.rightLeg.rotation.z = THREE.MathUtils.damp(rig.rightLeg.rotation.z, 0.022 * (1 - m), dampSpeed, safeDt);
+    rig.leftLeg.rotation.z = THREE.MathUtils.damp(rig.leftLeg.rotation.z, -0.032 * (1 - m), dampSpeed, safeDt);
+    rig.rightLeg.rotation.z = THREE.MathUtils.damp(rig.rightLeg.rotation.z, 0.032 * (1 - m), dampSpeed, safeDt);
 
     rig.leftKnee.rotation.x = THREE.MathUtils.damp(rig.leftKnee.rotation.x, tLeftKneeX, dampSpeed, safeDt);
     rig.rightKnee.rotation.x = THREE.MathUtils.damp(rig.rightKnee.rotation.x, tRightKneeX, dampSpeed, safeDt);
@@ -2723,7 +2744,9 @@ export class GameEngine {
 
     this.scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
-        obj.geometry?.dispose();
+        if (obj.geometry && !obj.geometry.userData?.shared) {
+          obj.geometry.dispose();
+        }
         if (Array.isArray(obj.material)) {
           obj.material.forEach((m) => m.dispose());
         } else {

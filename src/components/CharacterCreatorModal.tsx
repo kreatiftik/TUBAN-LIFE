@@ -120,12 +120,26 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
     const w = Math.max(220, mount.clientWidth || 280);
     const h = Math.max(240, mount.clientHeight || 320);
 
-    const camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 30);
-    camera.position.set(0, 1.18, 3.05);
-    camera.lookAt(0, 0.92, 0);
+    const isSoftwareGl = (() => {
+      const gl = document.createElement('canvas').getContext('webgl2');
+      if (!gl) return true;
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
+      const gpu = String(gl.getParameter(param));
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+      return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
+    })();
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'default' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 30);
+    camera.position.set(0, 1.08, 2.9);
+    camera.lookAt(0, 0.88, 0);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !isSoftwareGl,
+      powerPreference: 'default',
+    });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(w, h);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
@@ -180,24 +194,56 @@ export const CharacterCreatorModal: React.FC<CharacterCreatorModalProps> = ({
     window.addEventListener('resize', handleResize);
 
     const clock = new THREE.Clock();
-    let rafId = 0;
+    let frameId = 0;
+    let disposed = false;
+
+    const afterDraw = (cb: () => void) => {
+      const gl = renderer.getContext() as WebGL2RenderingContext;
+      const sync = gl.fenceSync ? gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0) : null;
+      gl.flush();
+      const poll = () => {
+        if (disposed) {
+          if (sync) gl.deleteSync(sync);
+          return;
+        }
+        const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
+        if (state === gl.UNSIGNALED) {
+          frameId = window.setTimeout(poll, 5);
+        } else {
+          if (sync) gl.deleteSync(sync);
+          frameId = window.setTimeout(cb, 80);
+        }
+      };
+      frameId = window.setTimeout(poll, 5);
+    };
+
     const animate = () => {
-      rafId = requestAnimationFrame(animate);
+      if (disposed) return;
       const t = clock.getElapsedTime();
       holder.rotation.y = yawRef.current;
       const rig = currentRigRef.current;
       if (rig) {
-        rig.spineGroup.rotation.x = Math.sin(t * 2.1) * 0.018;
-        rig.head.rotation.y = Math.sin(t * 0.9) * 0.06;
-        rig.leftArm.rotation.x = Math.sin(t * 1.6) * 0.04;
-        rig.rightArm.rotation.x = -Math.sin(t * 1.6) * 0.04;
+        rig.spineGroup.rotation.x = Math.sin(t * 2.1) * 0.014;
+        rig.head.rotation.y = Math.sin(t * 0.85) * 0.07;
+        rig.leftArm.rotation.x = Math.sin(t * 1.6) * 0.028;
+        rig.rightArm.rotation.x = -Math.sin(t * 1.6) * 0.028;
+        rig.leftArm.rotation.z = -0.115;
+        rig.rightArm.rotation.z = 0.115;
+        rig.leftElbow.rotation.x = -0.22;
+        rig.rightElbow.rotation.x = -0.22;
+        rig.leftLeg.rotation.z = -0.032;
+        rig.rightLeg.rotation.z = 0.032;
       }
       renderer.render(scene, camera);
+      if (isSoftwareGl) afterDraw(animate);
+      else frameId = requestAnimationFrame(animate);
     };
     animate();
 
     return () => {
-      cancelAnimationFrame(rafId);
+      disposed = true;
+      cancelAnimationFrame(frameId);
+      clearTimeout(frameId);
       window.removeEventListener('resize', handleResize);
       pedGeo.dispose();
       pedMat.dispose();

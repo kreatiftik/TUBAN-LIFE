@@ -12,22 +12,22 @@ import {
 export interface CharacterRig {
   group: THREE.Group;
   bodyGroup: THREE.Group;
-  pelvisGroup: THREE.Group;
-  spineGroup: THREE.Group;
+  pelvisGroup: THREE.Object3D;
+  spineGroup: THREE.Object3D;
   torso: THREE.Mesh;
-  head: THREE.Group;
-  leftArm: THREE.Group;
-  rightArm: THREE.Group;
-  leftElbow: THREE.Group;
-  rightElbow: THREE.Group;
-  leftWrist: THREE.Group;
-  rightWrist: THREE.Group;
-  leftLeg: THREE.Group;
-  rightLeg: THREE.Group;
-  leftKnee: THREE.Group;
-  rightKnee: THREE.Group;
-  leftAnkle: THREE.Group;
-  rightAnkle: THREE.Group;
+  head: THREE.Object3D;
+  leftArm: THREE.Object3D;
+  rightArm: THREE.Object3D;
+  leftElbow: THREE.Object3D;
+  rightElbow: THREE.Object3D;
+  leftWrist: THREE.Object3D;
+  rightWrist: THREE.Object3D;
+  leftLeg: THREE.Object3D;
+  rightLeg: THREE.Object3D;
+  leftKnee: THREE.Object3D;
+  rightKnee: THREE.Object3D;
+  leftAnkle: THREE.Object3D;
+  rightAnkle: THREE.Object3D;
   shirtMeshes: THREE.Mesh[];
   pantsMeshes: THREE.Mesh[];
   outfitDecorGroup: THREE.Group;
@@ -49,11 +49,42 @@ const OUTFIT_COLORS: Record<
   OutfitId,
   { shirt: number; collar: number; pants: number; metalness: number; style: CharacterShirtStyle }
 > = {
-  kasual: { shirt: 0x1e40af, collar: 0xe2e8f0, pants: 0x1e293b, metalness: 0.05, style: 'tshirt' },
-  batik: { shirt: 0x92400e, collar: 0xfef3c7, pants: 0x1c1917, metalness: 0.08, style: 'batik' },
-  jaket_motor: { shirt: 0x15803d, collar: 0x111827, pants: 0x0f172a, metalness: 0.15, style: 'jaket' },
-  lurik: { shirt: 0x44403c, collar: 0xd97706, pants: 0x292524, metalness: 0.1, style: 'lurik' },
+  kasual: { shirt: 0x1e40af, collar: 0xe2e8f0, pants: 0x1e293b, metalness: 0.04, style: 'tshirt' },
+  batik: { shirt: 0x92400e, collar: 0xfef3c7, pants: 0x1c1917, metalness: 0.06, style: 'batik' },
+  jaket_motor: { shirt: 0x3f4338, collar: 0x1f2421, pants: 0x1e293b, metalness: 0.08, style: 'jaket' },
+  lurik: { shirt: 0x44403c, collar: 0xd97706, pants: 0x292524, metalness: 0.06, style: 'lurik' },
 };
+
+// Bone indices in the shared 15-bone character Skeleton
+const BONE_IDX = {
+  PELVIS: 0,
+  SPINE: 1,
+  HEAD: 2,
+  L_ARM: 3,
+  L_ELBOW: 4,
+  L_WRIST: 5,
+  R_ARM: 6,
+  R_ELBOW: 7,
+  R_WRIST: 8,
+  L_LEG: 9,
+  L_KNEE: 10,
+  L_ANKLE: 11,
+  R_LEG: 12,
+  R_KNEE: 13,
+  R_ANKLE: 14,
+} as const;
+
+export const RIG_HIP_Y = 0.78;
+export const RIG_THIGH_LEN = 0.35;
+export const RIG_SHIN_LEN = 0.35;
+export const RIG_SHIN_FOOT_LEN = 0.428;
+export const RIG_SOLE_OFFSET_Y = 0.078;
+
+const SPINE_BIND_Y = 0.85;
+const HEAD_LOCAL_Y = 0.565;
+const ARM_LOCAL_Y = 0.455;
+const ELBOW_LOCAL_Y = -0.225;
+const WRIST_LOCAL_Y = -0.22;
 
 function createRoundedExtrude(w: number, h: number, d: number, r: number, bevel = 0.008): THREE.ExtrudeGeometry {
   const hw = w * 0.5;
@@ -84,21 +115,20 @@ function createRoundedExtrude(w: number, h: number, d: number, r: number, bevel 
 }
 
 function createShoeSoleGeo(): THREE.ExtrudeGeometry {
-  // Ergonomic foot footprint extruded in XZ (shape XY -> rotated to XZ)
   const s = new THREE.Shape();
-  s.moveTo(-0.044, -0.072);
-  s.quadraticCurveTo(-0.056, -0.02, -0.046, 0.035);
-  s.quadraticCurveTo(-0.058, 0.095, -0.042, 0.135);
-  s.quadraticCurveTo(0, 0.165, 0.042, 0.135);
-  s.quadraticCurveTo(0.058, 0.095, 0.046, 0.035);
-  s.quadraticCurveTo(0.056, -0.02, 0.044, -0.072);
-  s.quadraticCurveTo(0, -0.092, -0.044, -0.072);
+  s.moveTo(-0.036, -0.068);
+  s.quadraticCurveTo(-0.044, -0.015, -0.038, 0.035);
+  s.quadraticCurveTo(-0.048, 0.095, -0.035, 0.135);
+  s.quadraticCurveTo(0, 0.162, 0.035, 0.135);
+  s.quadraticCurveTo(0.048, 0.095, 0.038, 0.035);
+  s.quadraticCurveTo(0.044, -0.015, 0.036, -0.068);
+  s.quadraticCurveTo(0, -0.086, -0.036, -0.068);
 
   const geo = new THREE.ExtrudeGeometry(s, {
-    depth: 0.018,
+    depth: 0.015,
     bevelEnabled: true,
-    bevelThickness: 0.006,
-    bevelSize: 0.005,
+    bevelThickness: 0.005,
+    bevelSize: 0.004,
     bevelSegments: 2,
     curveSegments: 8,
   });
@@ -107,174 +137,1184 @@ function createShoeSoleGeo(): THREE.ExtrudeGeometry {
   return geo;
 }
 
-// Shared smooth anatomical geometries (reused across all characters for fast GPU rendering)
-const CHAR_GEOS = (() => {
-  // Anatomical torso: overlaps pelvis (-0.08), tapered waist (0.08), ribcage (0.25), chest/shoulders (0.44), sloping trapezius (0.55)
-  const torsoPts = [
-    new THREE.Vector2(0.0, -0.08),
-    new THREE.Vector2(0.145, -0.06),
-    new THREE.Vector2(0.142, 0.05),
-    new THREE.Vector2(0.148, 0.14),
-    new THREE.Vector2(0.178, 0.30),
-    new THREE.Vector2(0.198, 0.44),
-    new THREE.Vector2(0.162, 0.52),
-    new THREE.Vector2(0.072, 0.56),
-    new THREE.Vector2(0.0, 0.56),
-  ];
-  const torso = new THREE.LatheGeometry(torsoPts, 18);
-  torso.scale(1.18, 1.0, 0.70);
-  torso.computeVertexNormals();
+function createShoeVampGeo(): THREE.ExtrudeGeometry {
+  const s = new THREE.Shape();
+  s.moveTo(-0.064, -0.012);
+  s.lineTo(0.128, -0.012);
+  s.quadraticCurveTo(0.146, -0.001, 0.133, 0.019);
+  s.quadraticCurveTo(0.085, 0.039, 0.028, 0.058);
+  s.quadraticCurveTo(-0.014, 0.072, -0.048, 0.065);
+  s.quadraticCurveTo(-0.074, 0.039, -0.064, -0.012);
 
-  // Anatomical thigh: fuller quad & hamstring tapering cleanly into knee
-  const thighPts = [
-    new THREE.Vector2(0.0, 0.03),
-    new THREE.Vector2(0.084, 0.01),
-    new THREE.Vector2(0.091, -0.09),
-    new THREE.Vector2(0.078, -0.22),
-    new THREE.Vector2(0.065, -0.34),
-    new THREE.Vector2(0.0, -0.35),
-  ];
-  const thigh = new THREE.LatheGeometry(thighPts, 14);
-  thigh.scale(0.98, 1.0, 1.06);
-  thigh.computeVertexNormals();
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: 0.066,
+    bevelEnabled: true,
+    bevelThickness: 0.011,
+    bevelSize: 0.009,
+    bevelSegments: 3,
+    curveSegments: 8,
+  });
+  geo.translate(0, 0, -0.033);
+  geo.rotateY(-Math.PI / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
 
-  // Anatomical calf: sculpted gastrocnemius curve tapering to slender ankle
-  const calfPts = [
-    new THREE.Vector2(0.0, 0.02),
-    new THREE.Vector2(0.066, 0.0),
-    new THREE.Vector2(0.072, -0.10),
-    new THREE.Vector2(0.062, -0.21),
-    new THREE.Vector2(0.044, -0.33),
-    new THREE.Vector2(0.0, -0.35),
-  ];
-  const calf = new THREE.LatheGeometry(calfPts, 14);
-  calf.computeVertexNormals();
+function createEarGeo(): THREE.ExtrudeGeometry {
+  const s = new THREE.Shape();
+  s.moveTo(-0.005, 0.021);
+  s.quadraticCurveTo(0.014, 0.024, 0.014, 0.004);
+  s.quadraticCurveTo(0.013, -0.016, 0.004, -0.021);
+  s.quadraticCurveTo(-0.005, -0.022, -0.007, -0.011);
+  s.lineTo(-0.005, 0.021);
 
-  // Wide culotte (kulot) calf drape widening smoothly toward the ankle hem
-  const kulotPts = [
-    new THREE.Vector2(0.0, 0.02),
-    new THREE.Vector2(0.074, 0.0),
-    new THREE.Vector2(0.092, -0.11),
-    new THREE.Vector2(0.108, -0.22),
-    new THREE.Vector2(0.118, -0.33),
-    new THREE.Vector2(0.0, -0.34),
-  ];
-  const kulotCalf = new THREE.LatheGeometry(kulotPts, 16);
-  kulotCalf.computeVertexNormals();
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: 0.0045,
+    bevelEnabled: true,
+    bevelThickness: 0.0025,
+    bevelSize: 0.0022,
+    bevelSegments: 2,
+    curveSegments: 6,
+  });
+  geo.translate(0, 0, -0.00225);
+  geo.rotateY(-Math.PI / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
 
-  // Anatomical upper sleeve / bicep
-  const sleevePts = [
-    new THREE.Vector2(0.0, 0.02),
-    new THREE.Vector2(0.066, 0.0),
-    new THREE.Vector2(0.064, -0.09),
-    new THREE.Vector2(0.052, -0.21),
-    new THREE.Vector2(0.0, -0.23),
-  ];
-  const sleeve = new THREE.LatheGeometry(sleevePts, 12);
-  sleeve.computeVertexNormals();
+function createEyeballGeo(radius: number): THREE.BufferGeometry {
+  // Frontal hemisphere planar UV so painted iris is circular and centered at +Z
+  const geo = new THREE.SphereGeometry(radius, 20, 16);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const uv = geo.attributes.uv as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    if (z >= 0) {
+      uv.setXY(i, 0.5 + x / (2.15 * radius), 0.5 + y / (2.15 * radius));
+    } else {
+      uv.setXY(i, 0.06, 0.5);
+    }
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
 
-  // Anatomical forearm tapering cleanly to wrist
-  const forearmPts = [
-    new THREE.Vector2(0.0, 0.01),
-    new THREE.Vector2(0.048, 0.0),
-    new THREE.Vector2(0.051, -0.07),
-    new THREE.Vector2(0.041, -0.16),
-    new THREE.Vector2(0.032, -0.22),
-    new THREE.Vector2(0.0, -0.23),
-  ];
-  const forearm = new THREE.LatheGeometry(forearmPts, 12);
-  forearm.computeVertexNormals();
+function createCurvedFingerGeo(): THREE.BufferGeometry {
+  // Anatomical gently flexed human finger tapering toward distal phalanx
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, -0.018, 0.003),
+    new THREE.Vector3(0, -0.036, 0.011),
+    new THREE.Vector3(0, -0.052, 0.021),
+  ]);
+  const radialSegs = 8;
+  const lengthSegs = 8;
+  const geo = new THREE.TubeGeometry(curve, lengthSegs, 0.0058, radialSegs, false);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const ringStride = radialSegs + 1;
+  for (let l = 0; l <= lengthSegs; l++) {
+    const t = l / lengthSegs;
+    const center = curve.getPointAt(t);
+    const taper = 1.04 - 0.34 * Math.pow(t, 1.3);
+    for (let r = 0; r < ringStride; r++) {
+      const idx = l * ringStride + r;
+      const vx = pos.getX(idx) - center.x;
+      const vy = pos.getY(idx) - center.y;
+      const vz = pos.getZ(idx) - center.z;
+      pos.setXYZ(idx, center.x + vx * taper, center.y + vy * taper, center.z + vz * taper);
+    }
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
 
-  return {
-    torso,
-    pelvis: new THREE.SphereGeometry(0.166, 14, 12),
-    belt: new THREE.CylinderGeometry(0.169, 0.172, 0.05, 18),
-    buckle: createRoundedExtrude(0.055, 0.042, 0.024, 0.012, 0.005),
-    collar: new THREE.TorusGeometry(0.086, 0.024, 8, 16),
-    placket: createRoundedExtrude(0.038, 0.42, 0.022, 0.012, 0.004),
-    pocket: createRoundedExtrude(0.066, 0.07, 0.02, 0.014, 0.004),
-    button: new THREE.SphereGeometry(0.011, 8, 6),
-    jacketTee: createRoundedExtrude(0.092, 0.4, 0.022, 0.018, 0.004),
-    epaulet: new THREE.CapsuleGeometry(0.014, 0.075, 4, 6),
-    selendang: createRoundedExtrude(0.105, 0.54, 0.27, 0.03, 0.008),
-    backpack: createRoundedExtrude(0.24, 0.32, 0.14, 0.055, 0.016),
-    backpackFlap: createRoundedExtrude(0.245, 0.11, 0.145, 0.045, 0.012),
-    strap: new THREE.CapsuleGeometry(0.018, 0.32, 4, 8),
-    neckTowel: new THREE.TorusGeometry(0.115, 0.028, 8, 16, Math.PI * 1.45),
-    sarungSkirt: new THREE.CylinderGeometry(0.168, 0.192, 0.68, 18),
-    hipSphere: new THREE.SphereGeometry(0.088, 12, 10),
-    thigh,
-    kneeCap: new THREE.SphereGeometry(0.066, 12, 10),
-    calf,
-    kulotCalf,
-    cargoPocket: createRoundedExtrude(0.036, 0.115, 0.088, 0.014, 0.005),
-    ankleJoint: new THREE.SphereGeometry(0.043, 10, 8),
-    pantCuff: new THREE.TorusGeometry(0.047, 0.015, 8, 14),
-    shoeUpper: new THREE.CapsuleGeometry(0.048, 0.115, 6, 10),
-    shoeHeel: new THREE.SphereGeometry(0.046, 10, 8),
-    shoeSole: createShoeSoleGeo(),
-    sandalStrap: new THREE.TorusGeometry(0.048, 0.011, 6, 12, Math.PI),
-    shoulderCap: new THREE.SphereGeometry(0.072, 12, 10),
-    sleeve,
-    cuff: new THREE.TorusGeometry(0.036, 0.011, 6, 12),
-    elbowJoint: new THREE.SphereGeometry(0.049, 10, 8),
-    forearm,
-    wristWatch: new THREE.TorusGeometry(0.035, 0.008, 6, 12),
-    palm: createRoundedExtrude(0.062, 0.074, 0.032, 0.022, 0.008),
-    fingers: new THREE.CapsuleGeometry(0.022, 0.028, 4, 8),
-    thumb: new THREE.CapsuleGeometry(0.012, 0.028, 4, 6),
-    neck: new THREE.CylinderGeometry(0.056, 0.07, 0.14, 12),
-    cranium: new THREE.SphereGeometry(0.142, 18, 16),
-    jaw: new THREE.SphereGeometry(0.095, 14, 12),
-    ear: new THREE.SphereGeometry(0.032, 8, 8),
-    nose: new THREE.CapsuleGeometry(0.015, 0.032, 4, 8),
-    mouth: new THREE.CapsuleGeometry(0.007, 0.032, 4, 6),
-    mustache: new THREE.CapsuleGeometry(0.011, 0.055, 4, 6),
-    glassesRim: new THREE.TorusGeometry(0.031, 0.005, 6, 14),
-    glassesBridge: new THREE.CapsuleGeometry(0.004, 0.028, 3, 6),
-    eyeSclera: new THREE.SphereGeometry(0.022, 10, 8),
-    eyeIris: new THREE.SphereGeometry(0.013, 8, 8),
-    brow: new THREE.CapsuleGeometry(0.008, 0.034, 4, 6),
-    hairCap: new THREE.SphereGeometry(0.148, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.56),
-    hairBack: new THREE.SphereGeometry(0.138, 14, 12),
-    hairFringe: new THREE.CapsuleGeometry(0.038, 0.12, 4, 8),
-    hairSideburn: new THREE.CapsuleGeometry(0.015, 0.052, 4, 6),
-    hairSpike: new THREE.ConeGeometry(0.036, 0.085, 8),
-    curlyClump: new THREE.SphereGeometry(0.048, 10, 8),
-    bobSide: new THREE.CapsuleGeometry(0.044, 0.125, 4, 8),
-    bobBack: new THREE.CylinderGeometry(0.128, 0.156, 0.175, 14),
-    undercutTop: createRoundedExtrude(0.145, 0.072, 0.21, 0.036, 0.015),
-    ponytail: new THREE.CapsuleGeometry(0.038, 0.16, 4, 8),
-    hairBand: new THREE.TorusGeometry(0.042, 0.012, 6, 12),
-    kondeBun: new THREE.SphereGeometry(0.078, 14, 12),
-    hijabWrap: new THREE.SphereGeometry(0.156, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.68),
-    hijabDrape: new THREE.CylinderGeometry(0.11, 0.195, 0.24, 16),
-    caping: new THREE.ConeGeometry(0.34, 0.19, 20),
-    peci: new THREE.CylinderGeometry(0.138, 0.148, 0.11, 18),
-    policeCap: new THREE.CylinderGeometry(0.165, 0.148, 0.1, 18),
-    policeBrim: new THREE.CylinderGeometry(0.15, 0.15, 0.018, 16, 1, false, -Math.PI * 0.4, Math.PI * 0.8),
-    helmetShell: new THREE.SphereGeometry(0.168, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.65),
-    helmetVisor: new THREE.CylinderGeometry(0.162, 0.162, 0.085, 16, 1, true, -Math.PI * 0.36, Math.PI * 0.72),
-    topiCrown: new THREE.SphereGeometry(0.146, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5),
+function createHumanHeadGeo(isFemale: boolean): THREE.BufferGeometry {
+  // phiStart = -PI/2 puts u=0.5 cleanly at +Z center front and hides the UV seam at -Z nape
+  const geo = new THREE.SphereGeometry(1, 64, 48, -Math.PI / 2, Math.PI * 2);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+
+  const rx = isFemale ? 0.075 : 0.080;
+  const ry = isFemale ? 0.109 : 0.115;
+  const rz = isFemale ? 0.092 : 0.098;
+  const gauss = (d2: number, sigma2: number) => Math.exp(-d2 / sigma2);
+
+  for (let i = 0; i < pos.count; i++) {
+    const nx = pos.getX(i);
+    const ny = pos.getY(i);
+    const nz = pos.getZ(i);
+
+    let x = nx * rx;
+    let y = ny * ry;
+    let z = nz * rz;
+
+    // 1. Cranial volume, narrower temples & full occipital back of head
+    if (ny > 0.12 && nz > 0) {
+      x *= 1 - 0.08 * Math.min(1, (ny - 0.12) * 1.45) * nz;
+    }
+    if (nz < -0.15 && ny > -0.35) {
+      z -= 0.0065 * Math.abs(nz) * (1 - Math.abs(ny - 0.1) * 0.48);
+    }
+
+    // 2. Flatten front facial plane subtly for natural human proportions
+    if (nz > 0.35) {
+      const faceBlend = (nz - 0.35) / 0.65;
+      z -= 0.0075 * faceBlend * (1 - Math.abs(nx) * 0.55);
+    }
+
+    // 3. Defined lower face jawline, gonial angle & chin taper
+    if (ny < -0.04) {
+      const t = Math.min(1, (-ny - 0.04) / 0.96);
+      const jawNarrow = isFemale ? 0.46 : 0.36;
+      const gonialAngle = isFemale
+        ? 0.0022
+        : 0.0062 * gauss((ny + 0.50) ** 2, 0.045) * gauss((nz - 0.22) ** 2, 0.12);
+      x *= 1 - jawNarrow * Math.pow(t, 1.32);
+      x += Math.sign(nx) * gonialAngle;
+
+      if (nz > 0.25) {
+        const chin = gauss(nx ** 2, 0.085) * gauss((ny + 0.76) ** 2, 0.048);
+        z += (isFemale ? 0.0065 : 0.009) * chin;
+        y -= 0.003 * chin;
+      } else if (nz < 0.15) {
+        y += 0.013 * t * (0.25 - nz);
+      }
+    }
+
+    if (nz > 0.15) {
+      // 4. Arched supraorbital brow ridge
+      const browArcY = 0.205 - 0.025 * (nx * nx * 2.8);
+      const brow = gauss((ny - browArcY) ** 2, 0.013) * Math.max(0, 1 - Math.abs(nx) * 1.12);
+      z += 0.0068 * brow * nz;
+
+      // 5. Recessed orbital eye sockets
+      const socketR = ((Math.abs(nx) - 0.355) / 0.19) ** 2 + ((ny - 0.055) / 0.125) ** 2;
+      const socket = gauss(socketR, 0.78);
+      z -= 0.0115 * socket * nz;
+
+      // 6. Zygomatic cheekbones + lower buccal hollow
+      const cheekR = ((Math.abs(nx) - 0.55) / 0.24) ** 2 + ((ny + 0.10) / 0.15) ** 2;
+      const cheek = gauss(cheekR, 0.82);
+      x += Math.sign(nx) * 0.0045 * cheek;
+      z += 0.0058 * cheek * nz;
+
+      const hollowR = ((Math.abs(nx) - 0.45) / 0.20) ** 2 + ((ny + 0.36) / 0.17) ** 2;
+      z -= 0.0038 * gauss(hollowR, 0.85) * nz;
+
+      // 7. Continuous sculpted nose (bridge + dorsum + bulb tip + alar nostrils)
+      const bridge = gauss((nx / 0.105) ** 2, 1.0) * gauss(((ny + 0.065) / 0.19) ** 2, 1.0);
+      const tipBulb = gauss((nx / 0.125) ** 2, 1.0) * gauss(((ny + 0.215) / 0.085) ** 2, 1.0);
+      const alarL = gauss(((nx + 0.125) / 0.075) ** 2, 1.0) * gauss(((ny + 0.24) / 0.07) ** 2, 1.0);
+      const alarR = gauss(((nx - 0.125) / 0.075) ** 2, 1.0) * gauss(((ny + 0.24) / 0.07) ** 2, 1.0);
+      const noseScale = isFemale ? 0.88 : 1.0;
+      z += (bridge * 0.0148 + tipBulb * 0.0125 + (alarL + alarR) * 0.0052) * noseScale;
+      y -= tipBulb * 0.003 * noseScale;
+      x += Math.sign(nx) * (alarL + alarR) * 0.0022;
+
+      // 8. Philtrum groove + sculpted Cupid's bow upper lip + parted mouth line + lower lip
+      const philtrum = gauss((nx / 0.055) ** 2, 1.0) * gauss(((ny + 0.32) / 0.06) ** 2, 1.0);
+      z -= philtrum * 0.0018;
+
+      const mouthW = Math.max(0, 1 - (Math.abs(nx) / 0.25) ** 2);
+      const cupidBow = 0.012 * (1 - Math.cos(nx * 18)) * Math.exp(-(nx * nx) / 0.025);
+      const upperLip = gauss(((ny + 0.405 - cupidBow) / 0.042) ** 2, 1.0) * mouthW;
+      const mouthPart = gauss(((ny + 0.452) / 0.024) ** 2, 1.0) * Math.max(0, 1 - (Math.abs(nx) / 0.235) ** 2);
+      const lowerLip = gauss(((ny + 0.505) / 0.046) ** 2, 1.0) * Math.max(0, 1 - (Math.abs(nx) / 0.215) ** 2);
+      const mentolabial = gauss(((ny + 0.60) / 0.065) ** 2, 1.0) * Math.max(0, 1 - (Math.abs(nx) / 0.24) ** 2);
+
+      z += upperLip * 0.0058 + lowerLip * 0.0062 - mouthPart * 0.0030 - mentolabial * 0.0022;
+    }
+
+    pos.setXYZ(i, x, y, z);
+  }
+
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function createHumanFaceTexture(): THREE.CanvasTexture {
+  // Neutral warm-ivory multiplier texture aligned pixel-for-pixel with createHumanHeadGeo UVs
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#faf5f0';
+  ctx.fillRect(0, 0, size, size);
+
+  // Subtle epidermal variation so skin never looks plastic
+  let seed = 4219;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
   };
+  for (let i = 0; i < 2400; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const r = 0.8 + rand() * 2.0;
+    const v = 242 + Math.floor(rand() * 12);
+    ctx.fillStyle = `rgb(${v},${v - 3},${v - 6})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Exact UV inverse matching SphereGeometry(-PI/2, 2*PI)
+  const facePx = (nx: number, ny: number): [number, number] => {
+    const nz = Math.sqrt(Math.max(0.01, 1 - nx * nx - ny * ny));
+    const u = 0.5 + Math.atan2(nx, nz) / (Math.PI * 2);
+    const v = 0.5 + Math.asin(THREE.MathUtils.clamp(ny, -1, 1)) / Math.PI;
+    return [u * size, (1 - v) * size];
+  };
+
+  const paintGlow = (nx: number, ny: number, rx: number, ry: number, inner: string, outer: string) => {
+    const [cx, cy] = facePx(nx, ny);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, ry / rx);
+    const g = ctx.createRadialGradient(0, 0, rx * 0.1, 0, 0, rx);
+    g.addColorStop(0, inner);
+    g.addColorStop(1, outer);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  // Warm cheek & nose-tip subsurface glow + orbital socket ambient occlusion
+  paintGlow(-0.50, -0.12, 34, 24, 'rgba(220, 118, 96, 0.17)', 'rgba(220, 118, 96, 0)');
+  paintGlow(0.50, -0.12, 34, 24, 'rgba(220, 118, 96, 0.17)', 'rgba(220, 118, 96, 0)');
+  paintGlow(0, -0.20, 18, 16, 'rgba(218, 122, 98, 0.16)', 'rgba(218, 122, 98, 0)');
+
+  // Recessed eye socket shading & upper lash crease
+  paintGlow(-0.355, 0.06, 22, 16, 'rgba(110, 68, 52, 0.24)', 'rgba(110, 68, 52, 0)');
+  paintGlow(0.355, 0.06, 22, 16, 'rgba(110, 68, 52, 0.24)', 'rgba(110, 68, 52, 0)');
+
+  // Subtle nostril underside & alar crease shadow
+  paintGlow(-0.11, -0.265, 9, 6, 'rgba(85, 48, 36, 0.28)', 'rgba(85, 48, 36, 0)');
+  paintGlow(0.11, -0.265, 9, 6, 'rgba(85, 48, 36, 0.28)', 'rgba(85, 48, 36, 0)');
+
+  // Nasolabial fold softness
+  [-1, 1].forEach((s) => {
+    const [x0, y0] = facePx(s * 0.17, -0.24);
+    const [x1, y1] = facePx(s * 0.27, -0.46);
+    ctx.strokeStyle = 'rgba(128, 78, 60, 0.13)';
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.quadraticCurveTo((x0 + x1) * 0.5 + s * 4, (y0 + y1) * 0.5, x1, y1);
+    ctx.stroke();
+  });
+
+  // Shaded upper & lower lips + subtle mouth parting crease
+  const [lxL, lyL] = facePx(-0.21, -0.45);
+  const [lxC, lyTop] = facePx(0, -0.39);
+  const [lxR, lyR] = facePx(0.21, -0.45);
+  const [, lyBot] = facePx(0, -0.52);
+
+  ctx.fillStyle = 'rgba(176, 86, 78, 0.44)';
+  ctx.beginPath();
+  ctx.moveTo(lxL, lyL);
+  ctx.quadraticCurveTo(lxC - 8, lyTop - 2, lxC, lyTop + 2);
+  ctx.quadraticCurveTo(lxC + 8, lyTop - 2, lxR, lyR);
+  ctx.quadraticCurveTo(lxC, lyBot + 3, lxL, lyL);
+  ctx.closePath();
+  ctx.fill();
+
+  // Lip parting line
+  ctx.strokeStyle = 'rgba(72, 34, 30, 0.55)';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(lxL + 2, lyL);
+  ctx.quadraticCurveTo(lxC, lyL + 2, lxR - 2, lyR);
+  ctx.stroke();
+
+  // Under-chin & jaw soft ambient occlusion vignette
+  paintGlow(0, -0.84, 65, 28, 'rgba(95, 58, 44, 0.18)', 'rgba(95, 58, 44, 0)');
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createBodySkinTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#faf5f0';
+  ctx.fillRect(0, 0, 128, 128);
+  let seed = 8831;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  for (let i = 0; i < 650; i++) {
+    const v = 242 + Math.floor(rand() * 12);
+    ctx.fillStyle = `rgb(${v},${v - 3},${v - 5})`;
+    ctx.fillRect(rand() * 128, rand() * 128, 2, 2);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  return tex;
+}
+
+// Lazy fallback PBR normal & iris textures for CharacterCreatorModal (where WorldTextures isn't passed)
+interface FallbackCharPbrMaps {
+  faceMap: THREE.CanvasTexture;
+  bodySkinMap: THREE.CanvasTexture;
+  skinNormal: THREE.CanvasTexture;
+  clothNormal: THREE.CanvasTexture;
+  denimNormal: THREE.CanvasTexture;
+  hairNormal: THREE.CanvasTexture;
+  eyeIris: THREE.CanvasTexture;
+  denimColor: THREE.CanvasTexture;
+}
+
+let cachedFallbackMaps: FallbackCharPbrMaps | null = null;
+function getCharMaps(worldTex?: ProceduralTexturePack): FallbackCharPbrMaps {
+  if (!cachedFallbackMaps) {
+    const buildNormal = (size: number, strength: number, fn: (x: number, y: number) => number) => {
+      const h = new Float32Array(size * size);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) h[y * size + x] = fn(x, y);
+      }
+      const c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      const ctx = c.getContext('2d')!;
+      const img = ctx.createImageData(size, size);
+      const sample = (x: number, y: number) => h[(((y % size) + size) % size) * size + (((x % size) + size) % size)];
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const dx = (sample(x - 1, y) - sample(x + 1, y)) * strength;
+          const dy = (sample(x, y - 1) - sample(x, y + 1)) * strength;
+          const len = Math.hypot(dx, dy, 1) || 1;
+          const idx = (y * size + x) * 4;
+          img.data[idx] = Math.round(((dx / len) * 0.5 + 0.5) * 255);
+          img.data[idx + 1] = Math.round(((dy / len) * 0.5 + 0.5) * 255);
+          img.data[idx + 2] = Math.round(((1 / len) * 0.5 + 0.5) * 255);
+          img.data[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.NoColorSpace;
+      t.wrapS = THREE.RepeatWrapping;
+      t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(2, 2);
+      return t;
+    };
+
+    const [denC, denCtx] = (() => {
+      const c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 128;
+      return [c, c.getContext('2d')!] as const;
+    })();
+    const dImg = denCtx.createImageData(128, 128);
+    for (let y = 0; y < 128; y++) {
+      for (let x = 0; x < 128; x++) {
+        const twill = Math.sin((x + y) * 1.15) * 0.5 + 0.5;
+        const fold = Math.sin((y / 128) * Math.PI * 6) * 8;
+        const v = Math.max(180, Math.min(246, 212 + twill * 16 + fold));
+        const idx = (y * 128 + x) * 4;
+        dImg.data[idx] = v;
+        dImg.data[idx + 1] = v + 2;
+        dImg.data[idx + 2] = Math.min(255, v + 5);
+        dImg.data[idx + 3] = 255;
+      }
+    }
+    denCtx.putImageData(dImg, 0, 0);
+    const denimColor = new THREE.CanvasTexture(denC);
+    denimColor.colorSpace = THREE.SRGBColorSpace;
+    denimColor.wrapS = THREE.RepeatWrapping;
+    denimColor.wrapT = THREE.RepeatWrapping;
+    denimColor.repeat.set(2, 2);
+
+    const eyeC = document.createElement('canvas');
+    eyeC.width = 256;
+    eyeC.height = 256;
+    const eCtx = eyeC.getContext('2d')!;
+    const sg = eCtx.createRadialGradient(128, 128, 38, 128, 128, 128);
+    sg.addColorStop(0, '#f7f4f0');
+    sg.addColorStop(0.7, '#efe8e2');
+    sg.addColorStop(1, '#d8b4ad');
+    eCtx.fillStyle = sg;
+    eCtx.fillRect(0, 0, 256, 256);
+    eCtx.save();
+    eCtx.translate(128, 128);
+    const ig = eCtx.createRadialGradient(0, 0, 10, 0, 0, 46);
+    ig.addColorStop(0, '#5a361a');
+    ig.addColorStop(0.45, '#432512');
+    ig.addColorStop(0.85, '#29150a');
+    ig.addColorStop(1, '#120a07');
+    eCtx.fillStyle = ig;
+    eCtx.beginPath();
+    eCtx.arc(0, 0, 46, 0, Math.PI * 2);
+    eCtx.fill();
+    eCtx.fillStyle = '#070606';
+    eCtx.beginPath();
+    eCtx.arc(0, 0, 17, 0, Math.PI * 2);
+    eCtx.fill();
+    eCtx.fillStyle = 'rgba(255,255,255,0.22)';
+    eCtx.beginPath();
+    eCtx.arc(-11, -11, 5, 0, Math.PI * 2);
+    eCtx.fill();
+    eCtx.restore();
+    const eyeIris = new THREE.CanvasTexture(eyeC);
+    eyeIris.colorSpace = THREE.SRGBColorSpace;
+
+    cachedFallbackMaps = {
+      faceMap: createHumanFaceTexture(),
+      bodySkinMap: createBodySkinTexture(),
+      skinNormal: buildNormal(128, 1.0, (x, y) => Math.sin(x * 1.6) * Math.cos(y * 1.6) * 0.25),
+      clothNormal: buildNormal(128, 1.35, (x, y) => (Math.sin(x * 1.4) + Math.cos(y * 1.4)) * 0.22 + Math.sin(x * 0.14 + Math.sin(y * 0.05)) * 0.4),
+      denimNormal: buildNormal(128, 1.65, (x, y) => Math.sin((x + y) * 1.15) * 0.35 + Math.sin(y * 0.18 + Math.sin(x * 0.06)) * 0.5),
+      hairNormal: buildNormal(128, 1.5, (x, y) => Math.sin(x * 1.85 + Math.sin(y * 0.08) * 2.2) * 0.45),
+      eyeIris,
+      denimColor,
+    };
+  }
+
+  if (!worldTex) return cachedFallbackMaps;
+  return {
+    ...cachedFallbackMaps,
+    skinNormal: worldTex.skinNormal,
+    clothNormal: worldTex.clothNormal,
+    denimNormal: worldTex.denimNormal,
+    hairNormal: worldTex.hairNormal,
+    eyeIris: worldTex.eyeIris,
+    denimColor: worldTex.denim,
+  };
+}
+
+// ---------- Parametric SkinnedMesh Surface Builder (Continuous Anatomy & Drape) ----------
+interface SkinnedRing {
+  y: number;
+  cx: number;
+  cz: number;
+  rx: number;
+  rz: number;
+  weights: Array<[number, number]>;
+  capBottom?: boolean;
+  capTop?: boolean;
+  shapeFn?: (angle: number, normU: number) => { dr?: number; dx?: number; dz?: number; wOverride?: Array<[number, number]> };
+}
+
+function buildSkinnedTubeGeometry(
+  rings: SkinnedRing[],
+  radialSegs: number,
+  angleStart = 0,
+  angleLength = Math.PI * 2
+): THREE.BufferGeometry {
+  const closed = Math.abs(angleLength - Math.PI * 2) < 1e-4;
+  const vertCols = radialSegs + 1;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const skinIndices: number[] = [];
+  const skinWeights: number[] = [];
+  const indices: number[] = [];
+
+  const pushWeights = (ws: Array<[number, number]>) => {
+    let sum = 0;
+    const outIdx = [0, 0, 0, 0];
+    const outW = [0, 0, 0, 0];
+    for (let k = 0; k < Math.min(4, ws.length); k++) {
+      outIdx[k] = ws[k][0];
+      outW[k] = ws[k][1];
+      sum += ws[k][1];
+    }
+    const norm = sum > 0 ? 1 / sum : 1;
+    for (let k = 0; k < 4; k++) {
+      skinIndices.push(outIdx[k]);
+      skinWeights.push(outW[k] * norm);
+    }
+  };
+
+  for (let r = 0; r < rings.length; r++) {
+    const ring = rings[r];
+    const v = rings.length > 1 ? r / (rings.length - 1) : 0;
+    for (let c = 0; c <= radialSegs; c++) {
+      const u = c / radialSegs;
+      const angle = angleStart + u * angleLength;
+      const sinA = Math.sin(angle);
+      const cosA = Math.cos(angle);
+      const mod = ring.shapeFn ? ring.shapeFn(angle, u) : undefined;
+      const scaleR = mod?.dr ?? 1;
+      const x = ring.cx + sinA * ring.rx * scaleR + (mod?.dx ?? 0);
+      const z = ring.cz + cosA * ring.rz * scaleR + (mod?.dz ?? 0);
+      positions.push(x, ring.y, z);
+      uvs.push(closed ? u : u, v);
+      pushWeights(mod?.wOverride ?? ring.weights);
+    }
+  }
+
+  for (let r = 0; r < rings.length - 1; r++) {
+    const row0 = r * vertCols;
+    const row1 = (r + 1) * vertCols;
+    for (let c = 0; c < radialSegs; c++) {
+      const a = row0 + c;
+      const b = row0 + c + 1;
+      const d = row1 + c;
+      const e = row1 + c + 1;
+      indices.push(a, b, d);
+      indices.push(b, e, d);
+    }
+  }
+
+  // Optional bottom & top caps
+  if (rings[0]?.capBottom) {
+    const centerIdx = positions.length / 3;
+    positions.push(rings[0].cx, rings[0].y, rings[0].cz);
+    uvs.push(0.5, 0);
+    pushWeights(rings[0].weights);
+    for (let c = 0; c < radialSegs; c++) {
+      indices.push(centerIdx, c + 1, c);
+    }
+  }
+  if (rings[rings.length - 1]?.capTop) {
+    const last = rings[rings.length - 1];
+    const rowStart = (rings.length - 1) * vertCols;
+    const centerIdx = positions.length / 3;
+    positions.push(last.cx, last.y, last.cz);
+    uvs.push(0.5, 1);
+    pushWeights(last.weights);
+    for (let c = 0; c < radialSegs; c++) {
+      indices.push(centerIdx, rowStart + c, rowStart + c + 1);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const SKINNED_GEO_CACHE = new Map<string, THREE.BufferGeometry>();
+function getCachedSkinnedGeo(key: string, builder: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  let g = SKINNED_GEO_CACHE.get(key);
+  if (!g) {
+    g = builder();
+    g.userData.shared = true;
+    SKINNED_GEO_CACHE.set(key, g);
+  }
+  return g;
+}
+
+function getSkinnedNeckGeo(isFemale: boolean): THREE.BufferGeometry {
+  return getCachedSkinnedGeo(`neck_${isFemale ? 'f' : 'm'}`, () => {
+    const s = isFemale ? 0.87 : 1.0;
+    const w = BONE_IDX;
+    const rings: SkinnedRing[] = [
+      { y: 1.360, cx: 0, cz: -0.004, rx: 0.068 * s, rz: 0.064 * s, weights: [[w.SPINE, 0.9], [w.HEAD, 0.1]] },
+      { y: 1.395, cx: 0, cz: -0.004, rx: 0.055 * s, rz: 0.052 * s, weights: [[w.SPINE, 0.65], [w.HEAD, 0.35]] },
+      { y: 1.430, cx: 0, cz: -0.003, rx: 0.048 * s, rz: 0.047 * s, weights: [[w.SPINE, 0.35], [w.HEAD, 0.65]] },
+      { y: 1.468, cx: 0, cz: -0.002, rx: 0.046 * s, rz: 0.046 * s, weights: [[w.SPINE, 0.12], [w.HEAD, 0.88]] },
+      { y: 1.508, cx: 0, cz: 0.000, rx: 0.048 * s, rz: 0.048 * s, weights: [[w.SPINE, 0.02], [w.HEAD, 0.98]] },
+    ];
+    return buildSkinnedTubeGeometry(rings, 20);
+  });
+}
+
+function getSkinnedTorsoGeo(isFemale: boolean, variant: 'tee' | 'jacket_outer' | 'fitted'): THREE.BufferGeometry {
+  return getCachedSkinnedGeo(`torso_${isFemale ? 'f' : 'm'}_${variant}`, () => {
+    const w = BONE_IDX;
+    const sx = isFemale ? 0.93 : 1.04;
+    const sz = isFemale ? 0.95 : 1.02;
+    const isOuter = variant === 'jacket_outer';
+    const pad = isOuter ? 0.015 : variant === 'tee' ? -0.004 : 0.0;
+
+    // Anatomical vertical profile (y in bodyGroup space: pelvis=0.78..0.85, chest=1.18..1.35, collar=1.40)
+    const spec: Array<[number, number, number, number, number]> = [
+      // y, rxBase, rzBase, cz, spineWeight
+      [0.77, 0.140, 0.098, -0.004, 0.25],
+      [0.82, 0.143, 0.100, -0.002, 0.55],
+      [0.87, isFemale ? 0.124 : 0.136, 0.092, 0.000, 0.85],
+      [0.94, isFemale ? 0.120 : 0.138, 0.091, 0.002, 0.98],
+      [1.02, isFemale ? 0.132 : 0.148, 0.096, 0.003, 1.0],
+      [1.10, isFemale ? 0.146 : 0.162, 0.104, 0.004, 1.0],
+      [1.19, isFemale ? 0.156 : 0.178, isFemale ? 0.114 : 0.112, 0.005, 1.0],
+      [1.27, isFemale ? 0.162 : 0.190, 0.110, 0.003, 1.0],
+      [1.33, isFemale ? 0.150 : 0.174, 0.098, -0.001, 1.0],
+      [1.375, isFemale ? 0.105 : 0.120, 0.078, -0.003, 1.0],
+      [1.405, isFemale ? 0.064 : 0.072, 0.064, -0.004, 0.92],
+    ];
+
+    const rings: SkinnedRing[] = spec.map(([y, rxb, rzb, cz, sw], idx) => {
+      const weights: Array<[number, number]> =
+        sw < 1.0 ? [[w.SPINE, sw], [w.PELVIS, 1 - sw]] : [[w.SPINE, 1]];
+      return {
+        y,
+        cx: 0,
+        cz,
+        rx: (rxb + pad) * sx,
+        rz: (rzb + pad * 0.85) * sz,
+        weights,
+        capBottom: idx === 0 && !isOuter,
+        capTop: idx === spec.length - 1 && !isOuter,
+        shapeFn: (angle) => {
+          const sinA = Math.sin(angle);
+          const cosA = Math.cos(angle);
+          // Subtle anatomical pectoral / bust front volume + back lat/spine contour + soft cloth folds
+          let dz = 0;
+          if (cosA > 0.15 && y > 1.08 && y < 1.32) {
+            const chestBand = Math.sin(((y - 1.08) / 0.24) * Math.PI);
+            const dualLobe = 0.65 + 0.35 * Math.sin(Math.abs(sinA) * Math.PI);
+            dz += (isFemale ? 0.017 : 0.011) * chestBand * cosA * dualLobe;
+          }
+          // Natural spine hollow along center back
+          if (cosA < -0.5 && y > 0.92 && y < 1.32) {
+            dz += 0.006 * (-cosA - 0.5) * 2;
+          }
+          // Subtle fabric drape ripples near waist/ribcage
+          const fold = isOuter || variant === 'fitted'
+            ? 0.0022 * Math.sin(angle * 4 + y * 16)
+            : 0.0014 * Math.sin(angle * 3 + y * 14);
+
+          // Blend shoulder outer caps subtly with left/right arm swing so armholes never crease harshly
+          let wOverride: Array<[number, number]> | undefined;
+          if (y >= 1.24 && Math.abs(sinA) > 0.78) {
+            const armInf = 0.16 * ((Math.abs(sinA) - 0.78) / 0.22);
+            wOverride = [
+              [w.SPINE, 1 - armInf],
+              [sinA < 0 ? w.L_ARM : w.R_ARM, armInf],
+            ];
+          }
+          return { dr: 1 + fold / Math.max(0.08, rxb), dz, wOverride };
+        },
+      };
+    });
+
+    if (isOuter) {
+      // Open-front bomber jacket: leaves +/-17deg open down center front so inner T-shirt shows clearly
+      return buildSkinnedTubeGeometry(rings, 28, 0.30, Math.PI * 2 - 0.60);
+    }
+    return buildSkinnedTubeGeometry(rings, 28);
+  });
+}
+
+function getSkinnedArmGeo(
+  side: -1 | 1,
+  isFemale: boolean,
+  part: 'short_sleeve' | 'jacket_sleeve' | 'long_sleeve' | 'forearm_skin' | 'jacket_forearm_skin'
+): THREE.BufferGeometry {
+  return getCachedSkinnedGeo(`arm_${side < 0 ? 'L' : 'R'}_${isFemale ? 'f' : 'm'}_${part}`, () => {
+    const w = BONE_IDX;
+    const armBone = side < 0 ? w.L_ARM : w.R_ARM;
+    const elbowBone = side < 0 ? w.L_ELBOW : w.R_ELBOW;
+    const wristBone = side < 0 ? w.L_WRIST : w.R_WRIST;
+
+    const armX = isFemale ? 0.172 : 0.194;
+    const scale = isFemale ? 0.87 : 1.0;
+    const yShoulder = SPINE_BIND_Y + ARM_LOCAL_Y; // 1.305
+    const yElbow = yShoulder + ELBOW_LOCAL_Y; // 1.080
+    const yWrist = yElbow + WRIST_LOCAL_Y; // 0.860
+
+    // Helper for smooth cosine transition weight
+    const lerpW = (t: number, b0: number, b1: number): Array<[number, number]> => [
+      [b0, 1 - t],
+      [b1, t],
+    ];
+
+    const fullPts: Array<{ t: number; y: number; cx: number; r: number; weights: Array<[number, number]> }> = [
+      { t: 0.00, y: yShoulder + 0.032, cx: side * (armX * 0.72), r: 0.056 * scale, weights: [[w.SPINE, 0.82], [armBone, 0.18]] },
+      { t: 0.08, y: yShoulder + 0.010, cx: side * (armX * 0.90), r: 0.055 * scale, weights: [[w.SPINE, 0.40], [armBone, 0.60]] },
+      { t: 0.16, y: yShoulder - 0.025, cx: side * armX, r: 0.052 * scale, weights: [[armBone, 0.92], [w.SPINE, 0.08]] },
+      { t: 0.28, y: yShoulder - 0.090, cx: side * armX, r: 0.047 * scale, weights: [[armBone, 1.0]] },
+      { t: 0.37, y: yShoulder - 0.145, cx: side * armX, r: 0.044 * scale, weights: [[armBone, 1.0]] },
+      { t: 0.45, y: yElbow + 0.035, cx: side * armX, r: 0.040 * scale, weights: lerpW(0.20, armBone, elbowBone) },
+      { t: 0.51, y: yElbow + 0.000, cx: side * armX, r: 0.039 * scale, weights: lerpW(0.50, armBone, elbowBone) },
+      { t: 0.58, y: yElbow - 0.040, cx: side * armX, r: 0.041 * scale, weights: lerpW(0.84, armBone, elbowBone) },
+      { t: 0.70, y: yElbow - 0.105, cx: side * armX, r: 0.036 * scale, weights: [[elbowBone, 1.0]] },
+      { t: 0.84, y: yElbow - 0.165, cx: side * armX, r: 0.029 * scale, weights: [[elbowBone, 1.0]] },
+      { t: 0.94, y: yWrist + 0.022, cx: side * armX, r: 0.025 * scale, weights: lerpW(0.35, elbowBone, wristBone) },
+      { t: 1.00, y: yWrist - 0.006, cx: side * armX, r: 0.024 * scale, weights: lerpW(0.75, elbowBone, wristBone) },
+    ];
+
+    let slice = fullPts;
+    let rBoost = 1.0;
+    let cuffAtEnd = false;
+    if (part === 'short_sleeve') {
+      slice = fullPts.slice(0, 5);
+      rBoost = 1.08;
+      cuffAtEnd = true;
+    } else if (part === 'jacket_sleeve') {
+      // 3/4 pushed-up bomber sleeve (like Reference Image 3!) ending cleanly below elbow
+      slice = fullPts.slice(0, 9);
+      rBoost = 1.15;
+      cuffAtEnd = true;
+    } else if (part === 'long_sleeve') {
+      slice = fullPts.slice(0, 11);
+      rBoost = 1.10;
+      cuffAtEnd = true;
+    } else if (part === 'forearm_skin') {
+      slice = fullPts.slice(3);
+      rBoost = 0.96;
+    } else if (part === 'jacket_forearm_skin') {
+      slice = fullPts.slice(7);
+      rBoost = 0.96;
+    }
+
+    const rings: SkinnedRing[] = slice.map((pt, i) => {
+      const isCuff = cuffAtEnd && i === slice.length - 1;
+      const isFabric = part === 'short_sleeve' || part === 'jacket_sleeve' || part === 'long_sleeve';
+      const foldScale = isFabric ? 1 + (isCuff ? 0.04 : 0) : 1;
+      return {
+        y: pt.y,
+        cx: pt.cx,
+        cz: 0,
+        rx: pt.r * rBoost * foldScale,
+        rz: pt.r * rBoost * foldScale * 1.03,
+        weights: pt.weights,
+        shapeFn: isFabric
+          ? (angle) => ({ dr: 1 + 0.025 * Math.sin(angle * 3 + pt.y * 22) })
+          : undefined,
+      };
+    });
+
+    return buildSkinnedTubeGeometry(rings, 16);
+  });
+}
+
+function getSkinnedLegGeo(
+  side: -1 | 1,
+  isFemale: boolean,
+  part: 'pants_full' | 'pants_kulot' | 'pants_shorts' | 'lower_skin'
+): THREE.BufferGeometry {
+  return getCachedSkinnedGeo(`leg_${side < 0 ? 'L' : 'R'}_${isFemale ? 'f' : 'm'}_${part}`, () => {
+    const w = BONE_IDX;
+    const legBone = side < 0 ? w.L_LEG : w.R_LEG;
+    const kneeBone = side < 0 ? w.L_KNEE : w.R_KNEE;
+    const ankleBone = side < 0 ? w.L_ANKLE : w.R_ANKLE;
+
+    const hipX = isFemale ? 0.092 : 0.096;
+    const yHip = RIG_HIP_Y; // 0.78
+    const yKnee = yHip - RIG_THIGH_LEN; // 0.43
+    const yAnkle = yKnee - RIG_SHIN_LEN; // 0.08
+    const lerpW = (t: number, b0: number, b1: number): Array<[number, number]> => [
+      [b0, 1 - t],
+      [b1, t],
+    ];
+
+    const fullPts: Array<{ y: number; cx: number; rx: number; rz: number; weights: Array<[number, number]> }> = [
+      // Seamless hip saddle up inside pelvis
+      { y: yHip + 0.045, cx: side * (hipX * 0.78), rx: 0.082, rz: 0.088, weights: [[w.PELVIS, 0.78], [legBone, 0.22]] },
+      { y: yHip + 0.005, cx: side * (hipX * 0.94), rx: 0.079, rz: 0.084, weights: [[w.PELVIS, 0.42], [legBone, 0.58]] },
+      { y: yHip - 0.045, cx: side * hipX, rx: 0.077, rz: 0.082, weights: [[w.PELVIS, 0.10], [legBone, 0.90]] },
+      { y: yHip - 0.140, cx: side * hipX, rx: 0.073, rz: 0.077, weights: [[legBone, 1.0]] },
+      { y: yHip - 0.240, cx: side * hipX, rx: 0.064, rz: 0.068, weights: [[legBone, 1.0]] },
+      { y: yKnee + 0.048, cx: side * hipX, rx: 0.058, rz: 0.061, weights: lerpW(0.22, legBone, kneeBone) },
+      { y: yKnee + 0.000, cx: side * hipX, rx: 0.056, rz: 0.059, weights: lerpW(0.52, legBone, kneeBone) },
+      { y: yKnee - 0.050, cx: side * hipX, rx: 0.057, rz: 0.060, weights: lerpW(0.84, legBone, kneeBone) },
+      { y: yKnee - 0.125, cx: side * hipX, rx: 0.058, rz: 0.061, weights: [[kneeBone, 1.0]] },
+      { y: yKnee - 0.225, cx: side * hipX, rx: 0.049, rz: 0.052, weights: [[kneeBone, 1.0]] },
+      { y: yAnkle + 0.032, cx: side * hipX, rx: 0.041, rz: 0.044, weights: lerpW(0.20, kneeBone, ankleBone) },
+      { y: yAnkle + 0.002, cx: side * hipX, rx: 0.040, rz: 0.043, weights: lerpW(0.55, kneeBone, ankleBone) },
+    ];
+
+    let slice = fullPts;
+    if (part === 'pants_shorts') {
+      slice = fullPts.slice(0, 6);
+    } else if (part === 'lower_skin') {
+      slice = fullPts.slice(4);
+    }
+
+    const isSkin = part === 'lower_skin';
+    const isKulot = part === 'pants_kulot';
+
+    const rings: SkinnedRing[] = slice.map((pt, i) => {
+      const skinShrink = isSkin ? 0.88 : 1.04;
+      const kulotFlare = isKulot && pt.y < yKnee + 0.06 ? 1.0 + ((yKnee + 0.06 - pt.y) / 0.42) * 1.15 : 1.0;
+      const isCuff = !isSkin && !isKulot && i === slice.length - 1;
+      return {
+        y: pt.y,
+        cx: pt.cx,
+        cz: 0,
+        rx: pt.rx * skinShrink * kulotFlare * (isCuff ? 1.05 : 1),
+        rz: pt.rz * skinShrink * kulotFlare * (isCuff ? 1.05 : 1),
+        weights: pt.weights,
+        shapeFn: isSkin
+          ? undefined
+          : (angle) => ({
+              // Subtle natural trouser knee/thigh crease ripples
+              dr: 1 + 0.022 * Math.sin(angle * 3 + pt.y * 16),
+            }),
+      };
+    });
+
+    return buildSkinnedTubeGeometry(rings, 18);
+  });
+}
+
+function getSkinnedSarungGeo(isFemale: boolean): THREE.BufferGeometry {
+  return getCachedSkinnedGeo(`sarung_${isFemale ? 'f' : 'm'}`, () => {
+    const w = BONE_IDX;
+    const rings: SkinnedRing[] = [];
+    const steps = 12;
+    const sx = isFemale ? 1.02 : 1.06;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const y = 0.84 - t * 0.69; // 0.84 down to 0.15
+      const rBase = 0.145 + t * 0.032;
+      rings.push({
+        y,
+        cx: 0,
+        cz: 0,
+        rx: rBase * sx,
+        rz: rBase * 0.78,
+        weights: [[w.PELVIS, 1]],
+        shapeFn: (angle) => {
+          const sinA = Math.sin(angle);
+          const legInf = Math.min(0.65, t * 0.72);
+          const sideBone = sinA < 0 ? w.L_LEG : w.R_LEG;
+          const kneeBone = sinA < 0 ? w.L_KNEE : w.R_KNEE;
+          const legShare = legInf * Math.min(1, Math.abs(sinA) * 1.25);
+          const pelvisShare = 1 - legShare;
+          return {
+            dr: 1 + 0.015 * Math.sin(angle * 5 + y * 10),
+            wOverride: [
+              [w.PELVIS, pelvisShare],
+              [sideBone, legShare * 0.65],
+              [kneeBone, legShare * 0.35],
+            ],
+          };
+        },
+      });
+    }
+    return buildSkinnedTubeGeometry(rings, 24);
+  });
+}
+
+function getSkinnedHijabDrapeGeo(isFemale: boolean): THREE.BufferGeometry {
+  return getCachedSkinnedGeo(`hijab_drape_${isFemale ? 'f' : 'm'}`, () => {
+    const w = BONE_IDX;
+    const sx = isFemale ? 0.96 : 1.04;
+    const sz = isFemale ? 0.98 : 1.02;
+    // Draped scarf cascading from tucked under-chin/neck (HEAD) smoothly onto collarbones & upper chest/back (SPINE)
+    const spec: Array<{ y: number; cz: number; rx: number; rz: number; weights: Array<[number, number]> }> = [
+      { y: 1.462, cz: -0.010, rx: 0.062, rz: 0.056, weights: [[w.HEAD, 0.85], [w.SPINE, 0.15]] },
+      { y: 1.430, cz: -0.006, rx: 0.065, rz: 0.062, weights: [[w.HEAD, 0.45], [w.SPINE, 0.55]] },
+      { y: 1.398, cz: -0.002, rx: 0.078, rz: 0.074, weights: [[w.SPINE, 0.88], [w.HEAD, 0.12]] },
+      { y: 1.366, cz: 0.004, rx: 0.114 * sx, rz: 0.090 * sz, weights: [[w.SPINE, 1]] },
+      { y: 1.330, cz: 0.007, rx: 0.142 * sx, rz: 0.106 * sz, weights: [[w.SPINE, 1]] },
+      { y: 1.288, cz: 0.008, rx: 0.146 * sx, rz: 0.118 * sz, weights: [[w.SPINE, 1]] },
+      { y: 1.244, cz: 0.007, rx: 0.136 * sx, rz: 0.116 * sz, weights: [[w.SPINE, 1]] },
+    ];
+
+    const rings: SkinnedRing[] = spec.map((pt, idx) => ({
+      y: pt.y,
+      cx: 0,
+      cz: pt.cz,
+      rx: pt.rx,
+      rz: pt.rz,
+      weights: pt.weights,
+      shapeFn: (angle) => {
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        // Gentle chest drape flare in front/back + soft vertical cloth pleats
+        const chestCurve = cosA > 0 && idx >= 3 ? 0.014 * cosA * (idx / (spec.length - 1)) : 0;
+        const shoulderTuck = Math.abs(sinA) > 0.75 && idx >= 4 ? -0.006 * (Math.abs(sinA) - 0.75) * 4 : 0;
+        const pleats = idx >= 1 ? 0.0024 * Math.sin(angle * 7 + pt.y * 12) : 0;
+        return {
+          dr: 1 + (pleats + shoulderTuck) / Math.max(0.06, pt.rx),
+          dz: chestCurve,
+        };
+      },
+    }));
+
+    return buildSkinnedTubeGeometry(rings, 28);
+  });
+}
+
+function createHijabHoodGeo(): THREE.BufferGeometry {
+  // Sculpted open-face headscarf hood sweeping backward from oval face frame rim -> crown/sides -> back bun pole.
+  // Coordinates are in `head` bone local space (`skull` female center at (0, 0.145, 0)).
+  const rings = 20;
+  const segs = 32;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  const center = new THREE.Vector3(0, 0.145, -0.012);
+  const pole = new THREE.Vector3(0, 0.133, -0.122);
+  const vPole = pole.clone().sub(center).normalize();
+  const tmpV0 = new THREE.Vector3();
+  const tmpRim = new THREE.Vector3();
+  const tmpDir = new THREE.Vector3();
+
+  for (let i = 0; i <= rings; i++) {
+    const t = i / rings;
+    // Slight inward tuck right at t=0 rim edge, smoothing outward onto head wrap envelope
+    const smoothEnv = t < 0.20 ? (t / 0.20) * (t / 0.20) * (3 - 2 * (t / 0.20)) : 1.0;
+
+    for (let j = 0; j <= segs; j++) {
+      const alpha = (j / segs) * Math.PI * 2;
+      const c = Math.cos(alpha); // +1 top forehead, 0 cheeks/temples, -1 under chin
+      const s = Math.sin(alpha); // +/-1 right/left face edge
+
+      // Oval/superellipse face-frame rim completely clear of forehead, eyebrows, eyes, nose, lips & chin
+      const cOval = Math.sign(c) * Math.pow(Math.abs(c), 0.78);
+      const sOval = Math.sign(s) * Math.pow(Math.abs(s), 0.86);
+      const rimX = sOval * (0.077 - 0.012 * Math.max(0, -c));
+      const rimY = 0.128 + cOval * 0.084 + 0.004 * Math.pow(Math.max(0, c), 3);
+      const rimZ = 0.036 + Math.max(0, c) * 0.037 + Math.max(0, -c) * 0.008;
+      tmpRim.set(rimX, rimY, rimZ);
+
+      tmpV0.copy(tmpRim).sub(center).normalize();
+      const dot = Math.max(-0.998, Math.min(0.998, tmpV0.dot(vPole)));
+      const omega = Math.acos(dot);
+      const sinOmega = Math.sin(omega);
+
+      if (sinOmega > 1e-4) {
+        const k0 = Math.sin((1 - t) * omega) / sinOmega;
+        const k1 = Math.sin(t * omega) / sinOmega;
+        tmpDir.set(
+          tmpV0.x * k0 + vPole.x * k1,
+          tmpV0.y * k0 + vPole.y * k1,
+          tmpV0.z * k0 + vPole.z * k1
+        ).normalize();
+      } else {
+        tmpDir.copy(vPole);
+      }
+
+      // Outer cranium wrap surface
+      const envX = center.x + tmpDir.x * 0.086;
+      const envY = center.y + tmpDir.y * 0.119;
+      const envZ = center.z + tmpDir.z * 0.105;
+
+      let x = THREE.MathUtils.lerp(rimX, envX, smoothEnv);
+      let y = THREE.MathUtils.lerp(rimY, envY, smoothEnv);
+      let z = THREE.MathUtils.lerp(rimZ, envZ, smoothEnv);
+
+      // Soft rolled front hem near face frame (t=0..0.14)
+      if (t < 0.16) {
+        const brimLift = 0.0035 * Math.sin((t / 0.16) * Math.PI);
+        x += Math.sign(x) * brimLift * 0.65;
+        y += c * brimLift * 0.55;
+        z += brimLift * 0.35;
+      }
+
+      // Subtle fabric drape folds & neat back hair-bun volume
+      const fold = 0.0018 * Math.sin(alpha * 5 + t * 7) * Math.sin(t * Math.PI);
+      x += Math.sign(x) * fold * 0.5;
+      y += fold * 0.4;
+      if (t > 0.65) {
+        const bun = Math.pow((t - 0.65) / 0.35, 1.45);
+        z -= 0.012 * bun;
+      }
+
+      // Clamp against female skull so no scalp/temple/ear mesh clips through
+      const dxSkull = x / 0.078;
+      const dySkull = (y - 0.145) / 0.112;
+      const dzSkull = z / 0.096;
+      const skullD = Math.sqrt(dxSkull * dxSkull + dySkull * dySkull + dzSkull * dzSkull);
+      if (skullD > 1e-4 && skullD < 1.045 && t > 0.02) {
+        const push = 1.045 / skullD;
+        x *= push;
+        y = 0.145 + (y - 0.145) * push;
+        if (z < 0.02) {
+          z *= push;
+        }
+      }
+
+      if (i === rings) {
+        x = pole.x;
+        y = pole.y;
+        z = pole.z;
+      }
+
+      positions.push(x, y, z);
+      uvs.push(j / segs, t);
+    }
+  }
+
+  const stride = segs + 1;
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j < segs; j++) {
+      const a = i * stride + j;
+      const b = a + 1;
+      const c = a + stride;
+      const d = c + 1;
+      indices.push(a, b, c);
+      indices.push(b, d, c);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function createHijabCiputGeo(): THREE.BufferGeometry {
+  // Subtle inner underscarf (ciput) visible cleanly along upper forehead hairline above eyebrows
+  const depthSteps = 4;
+  const arcSegs = 22;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= depthSteps; i++) {
+    const t = i / depthSteps;
+    for (let j = 0; j <= arcSegs; j++) {
+      const u = j / arcSegs;
+      const alpha = (u - 0.5) * Math.PI * 0.72; // neatly spans upper forehead hairline above temples
+      const c = Math.cos(alpha);
+      const s = Math.sin(alpha);
+      const cOval = Math.pow(Math.max(0, c), 0.78);
+      const sOval = Math.sign(s) * Math.pow(Math.abs(s), 0.86);
+      const archLift = 0.003 * Math.pow(Math.max(0, c), 2.5);
+      const x = sOval * (0.075 - t * 0.002);
+      const y = 0.130 + cOval * (0.077 + t * 0.011) + archLift;
+      const z = 0.036 + Math.max(0, c) * (0.035 - t * 0.016);
+      positions.push(x, y, z);
+      uvs.push(u, t);
+    }
+  }
+
+  const stride = arcSegs + 1;
+  for (let i = 0; i < depthSteps; i++) {
+    for (let j = 0; j < arcSegs; j++) {
+      const a = i * stride + j;
+      const b = a + 1;
+      const c = a + stride;
+      const d = c + 1;
+      indices.push(a, b, c);
+      indices.push(b, d, c);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Shared rigid/accessory geometries
+const CHAR_GEOS = (() => {
+  const pelvisMalePts = [
+    new THREE.Vector2(0.0, 0.72),
+    new THREE.Vector2(0.120, 0.73),
+    new THREE.Vector2(0.144, 0.78),
+    new THREE.Vector2(0.142, 0.84),
+    new THREE.Vector2(0.132, 0.875),
+    new THREE.Vector2(0.0, 0.88),
+  ];
+  const pelvisMale = new THREE.LatheGeometry(pelvisMalePts, 22);
+  pelvisMale.scale(1.08, 1.0, 0.75);
+  pelvisMale.computeVertexNormals();
+
+  const pelvisFemalePts = [
+    new THREE.Vector2(0.0, 0.72),
+    new THREE.Vector2(0.124, 0.73),
+    new THREE.Vector2(0.150, 0.78),
+    new THREE.Vector2(0.138, 0.84),
+    new THREE.Vector2(0.118, 0.875),
+    new THREE.Vector2(0.0, 0.88),
+  ];
+  const pelvisFemale = new THREE.LatheGeometry(pelvisFemalePts, 22);
+  pelvisFemale.scale(1.10, 1.0, 0.77);
+  pelvisFemale.computeVertexNormals();
+
+  const geos = {
+    pelvisMale,
+    pelvisFemale,
+    belt: new THREE.CylinderGeometry(0.147, 0.151, 0.032, 22),
+    buckle: createRoundedExtrude(0.044, 0.032, 0.016, 0.008, 0.004),
+    collar: new THREE.TorusGeometry(0.068, 0.012, 8, 20),
+    jacketCollar: new THREE.TorusGeometry(0.075, 0.017, 10, 22, Math.PI * 1.55),
+    jacketLapel: createRoundedExtrude(0.024, 0.42, 0.022, 0.008, 0.003),
+    jacketHemRib: new THREE.TorusGeometry(0.138, 0.016, 8, 24, Math.PI * 1.75),
+    placket: createRoundedExtrude(0.030, 0.38, 0.014, 0.008, 0.003),
+    pocket: createRoundedExtrude(0.054, 0.060, 0.012, 0.009, 0.003),
+    button: new THREE.SphereGeometry(0.0075, 8, 6),
+    epaulet: new THREE.CapsuleGeometry(0.010, 0.064, 4, 6),
+    selendang: createRoundedExtrude(0.095, 0.50, 0.23, 0.025, 0.006),
+    backpack: createRoundedExtrude(0.22, 0.30, 0.13, 0.05, 0.014),
+    backpackFlap: createRoundedExtrude(0.225, 0.10, 0.135, 0.04, 0.01),
+    strap: new THREE.CapsuleGeometry(0.015, 0.30, 4, 8),
+    neckTowel: new THREE.TorusGeometry(0.095, 0.022, 8, 16, Math.PI * 1.45),
+    cargoPocket: createRoundedExtrude(0.030, 0.105, 0.078, 0.012, 0.004),
+    shoeVamp: createShoeVampGeo(),
+    shoeCollar: new THREE.TorusGeometry(0.044, 0.012, 8, 16),
+    shoeTongue: createRoundedExtrude(0.042, 0.036, 0.016, 0.012, 0.004),
+    shoeSole: createShoeSoleGeo(),
+    sandalStrap: new THREE.TorusGeometry(0.042, 0.009, 6, 12, Math.PI),
+    bareFoot: createShoeVampGeo(),
+    toeSegment: new THREE.CapsuleGeometry(0.007, 0.012, 4, 6),
+    wristWatch: new THREE.TorusGeometry(0.027, 0.0055, 6, 14),
+    palm: createRoundedExtrude(0.046, 0.060, 0.020, 0.014, 0.006),
+    thenarPad: new THREE.SphereGeometry(0.014, 10, 8),
+    curvedFinger: createCurvedFingerGeo(),
+    thumbSegment: new THREE.CapsuleGeometry(0.0065, 0.022, 4, 6),
+    headMale: createHumanHeadGeo(false),
+    headFemale: createHumanHeadGeo(true),
+    ear: createEarGeo(),
+    eyeball: createEyeballGeo(0.0125),
+    eyelidArc: new THREE.TorusGeometry(0.0132, 0.0024, 6, 14, Math.PI * 0.92),
+    brow: new THREE.CapsuleGeometry(0.0036, 0.023, 4, 8),
+    mustache: new THREE.CapsuleGeometry(0.0058, 0.038, 4, 8),
+    glassesRim: new THREE.TorusGeometry(0.019, 0.0030, 6, 16),
+    glassesBridge: new THREE.CapsuleGeometry(0.0024, 0.015, 3, 6),
+    glassesArm: new THREE.CapsuleGeometry(0.0020, 0.075, 3, 6),
+    hairCap: new THREE.SphereGeometry(0.095, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.58),
+    hairBack: new THREE.SphereGeometry(0.088, 18, 14),
+    hairFringe: new THREE.CapsuleGeometry(0.021, 0.082, 4, 8),
+    hairSideburn: new THREE.CapsuleGeometry(0.0085, 0.036, 4, 6),
+    hairSpike: new THREE.ConeGeometry(0.021, 0.056, 8),
+    curlyClump: new THREE.SphereGeometry(0.028, 10, 8),
+    bobSide: new THREE.CapsuleGeometry(0.025, 0.095, 4, 8),
+    bobBack: new THREE.CylinderGeometry(0.078, 0.098, 0.135, 16),
+    undercutTop: createRoundedExtrude(0.095, 0.048, 0.138, 0.024, 0.010),
+    ponytail: new THREE.CapsuleGeometry(0.024, 0.135, 4, 8),
+    hairBand: new THREE.TorusGeometry(0.026, 0.008, 6, 12),
+    kondeBun: new THREE.SphereGeometry(0.048, 14, 12),
+    hijabCiput: createHijabCiputGeo(),
+    hijabHood: createHijabHoodGeo(),
+    caping: new THREE.ConeGeometry(0.28, 0.15, 22),
+    peci: new THREE.CylinderGeometry(0.086, 0.093, 0.085, 20),
+    policeCap: new THREE.CylinderGeometry(0.105, 0.094, 0.08, 20),
+    policeBrim: new THREE.CylinderGeometry(0.098, 0.098, 0.014, 16, 1, false, -Math.PI * 0.4, Math.PI * 0.8),
+    helmetShell: new THREE.SphereGeometry(0.114, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.65),
+    helmetVisor: new THREE.CylinderGeometry(0.110, 0.110, 0.062, 16, 1, true, -Math.PI * 0.36, Math.PI * 0.72),
+    topiCrown: new THREE.SphereGeometry(0.095, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.5),
+  };
+  Object.values(geos).forEach((g) => {
+    g.userData.shared = true;
+  });
+  return geos;
 })();
 
 const SHARED_CHAR_MATS = {
-  shoe: new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.42, metalness: 0.12 }),
-  pantofel: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.24, metalness: 0.2 }),
-  sole: new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.68 }),
-  darkSole: new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.85 }),
-  belt: new THREE.MeshStandardMaterial({ color: 0x231a14, roughness: 0.65 }),
-  buckle: new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.25, metalness: 0.85 }),
-  cuffWhite: new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.75 }),
+  shoe: new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.46, metalness: 0.10 }),
+  pantofel: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.22, metalness: 0.22 }),
+  sole: new THREE.MeshStandardMaterial({ color: 0x262626, roughness: 0.82 }),
+  sneakerSole: new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.72 }),
+  darkSole: new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.85 }),
+  belt: new THREE.MeshStandardMaterial({ color: 0x231a14, roughness: 0.58 }),
+  buckle: new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.24, metalness: 0.85 }),
   watch: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.35, metalness: 0.65 }),
-  lips: new THREE.MeshStandardMaterial({ color: 0x9d5b4c, roughness: 0.55 }),
   glasses: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.25, metalness: 0.85 }),
-  backpack: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 }),
+  backpack: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.82 }),
   backpackAccent: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.75 }),
   towel: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 }),
-  sclera: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }),
-  iris: new THREE.MeshStandardMaterial({ color: 0x171412, roughness: 0.2 }),
   caping: new THREE.MeshStandardMaterial({ color: 0xc29b61, roughness: 0.85 }),
   peci: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.88 }),
   policeCap: new THREE.MeshStandardMaterial({ color: 0x3f2e1d, roughness: 0.6 }),
@@ -288,12 +1328,6 @@ const SHARED_CHAR_MATS = {
     side: THREE.DoubleSide,
   }),
 };
-
-export const RIG_HIP_Y = 0.78;
-export const RIG_THIGH_LEN = 0.35;
-export const RIG_SHIN_LEN = 0.35;
-export const RIG_SHIN_FOOT_LEN = 0.428;
-export const RIG_SOLE_OFFSET_Y = 0.078;
 
 export interface CharacterBuildOptions {
   gender?: 'laki' | 'perempuan';
@@ -327,7 +1361,7 @@ const PROCEDURAL_PALETTES = {
   hijab: [0xf8fafc, 0xf59e0b, 0x0d9488, 0xbe185d, 0x4f46e5, 0x0f766e, 0x92400e, 0xe11d48, 0x334155, 0x6d28d9],
   shirtCasual: [
     0x1d4ed8, 0x0369a1, 0x0f766e, 0x15803d, 0xb91c1c, 0xd97706, 0x7c3aed,
-    0xbe185d, 0x334155, 0xe11d48, 0x047857, 0x4338ca, 0xc2410c, 0xf1f5f9,
+    0xbe185d, 0x334155, 0x4f5646, 0x047857, 0x4338ca, 0xc2410c, 0xe2e8f0,
   ],
   shirtTrad: [0x92400e, 0x78350f, 0x881337, 0x1e3a8a, 0x0f766e, 0x44403c, 0x7c2d12, 0x6b21a8, 0x065f46, 0xbe123c],
   pantsMain: [0x1e293b, 0x0f172a, 0x334155, 0x1e3a8a, 0x3f3f46, 0x292524, 0x44403c, 0x365314, 0x57534e, 0x78350f],
@@ -366,6 +1400,7 @@ export function resolveProceduralCharacterOptions(options: CharacterBuildOptions
     const pantsStyle = pickRandom<CharacterPantsStyle>(['celana_kain', 'cargo']);
     return {
       ...options,
+      gender: 'laki',
       skinColor,
       hairStyle,
       hairColor: pickRandom(PROCEDURAL_PALETTES.hairNatural),
@@ -382,6 +1417,7 @@ export function resolveProceduralCharacterOptions(options: CharacterBuildOptions
     const pantsStyle = pickRandom<CharacterPantsStyle>(['shorts', 'celana_kain', 'jeans']);
     return {
       ...options,
+      gender: 'laki',
       skinColor,
       hairStyle,
       hairColor: pickRandom(PROCEDURAL_PALETTES.hairNatural),
@@ -400,6 +1436,7 @@ export function resolveProceduralCharacterOptions(options: CharacterBuildOptions
     const pantsStyle = pickRandom<CharacterPantsStyle>(['jeans', 'cargo', 'celana_kain']);
     return {
       ...options,
+      gender: 'laki',
       skinColor,
       hairStyle,
       hairColor: pickRandom(PROCEDURAL_PALETTES.hairNatural),
@@ -441,6 +1478,7 @@ export function resolveProceduralCharacterOptions(options: CharacterBuildOptions
           : 'none';
     return {
       ...options,
+      gender: 'perempuan',
       skinColor,
       hairStyle,
       hairColor,
@@ -454,7 +1492,6 @@ export function resolveProceduralCharacterOptions(options: CharacterBuildOptions
     };
   }
 
-  // Male / worker / elder_male
   const isElder = archetype === 'elder_male';
   const hairStyle = isElder
     ? pickRandom<CharacterHairStyle>(['elder', 'short_part', 'fade'])
@@ -482,6 +1519,7 @@ export function resolveProceduralCharacterOptions(options: CharacterBuildOptions
         : 'none';
   return {
     ...options,
+    gender: 'laki',
     skinColor,
     hairStyle,
     hairColor,
@@ -501,50 +1539,69 @@ function buildOutfitDecor(
   style: CharacterShirtStyle,
   shirtColor: number,
   collarColor: number,
-  textures?: ProceduralTexturePack
+  textures?: ProceduralTexturePack,
+  isFemale = false
 ) {
   while (decorGroup.children.length > 0) {
     decorGroup.remove(decorGroup.children[0]);
   }
 
+  const maps = getCharMaps(textures);
   const trimMat = new THREE.MeshStandardMaterial({
     color: collarColor,
-    roughness: 0.58,
+    normalMap: maps.clothNormal,
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    roughness: 0.68,
   });
+  const chestZ = isFemale ? 0.106 : 0.114;
 
-  // Relative to spineGroup (origin at waist y = 0.85)
   if (style === 'kemeja' || style === 'batik' || style === 'seragam') {
     const placket = new THREE.Mesh(CHAR_GEOS.placket, trimMat);
-    placket.position.set(0, 0.26, 0.132);
+    placket.position.set(0, 0.26, chestZ);
+    placket.rotation.x = -0.10;
     decorGroup.add(placket);
     for (let b = 0; b < 3; b++) {
       const btn = new THREE.Mesh(CHAR_GEOS.button, SHARED_CHAR_MATS.belt);
-      btn.position.set(0, 0.17 + b * 0.12, 0.146);
+      btn.position.set(0, 0.17 + b * 0.11, chestZ + 0.008 + b * 0.005);
       decorGroup.add(btn);
     }
     const pocket = new THREE.Mesh(CHAR_GEOS.pocket, trimMat);
-    pocket.position.set(0.095, 0.34, 0.128);
+    pocket.position.set(isFemale ? 0.072 : 0.082, 0.33, chestZ + 0.004);
+    pocket.rotation.x = -0.10;
     decorGroup.add(pocket);
     if (style === 'seragam') {
-      [-0.165, 0.165].forEach((ex) => {
+      [-0.135, 0.135].forEach((ex) => {
         const ep = new THREE.Mesh(CHAR_GEOS.epaulet, SHARED_CHAR_MATS.buckle);
         ep.rotation.z = Math.PI / 2;
-        ep.position.set(ex, 0.515, 0);
+        ep.position.set(ex, 0.495, 0);
         decorGroup.add(ep);
       });
     }
   } else if (style === 'jaket') {
-    const innerTee = new THREE.Mesh(
-      CHAR_GEOS.jacketTee,
-      new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.8 })
-    );
-    innerTee.position.set(0, 0.29, 0.128);
-    const zipL = new THREE.Mesh(CHAR_GEOS.placket, SHARED_CHAR_MATS.watch);
-    zipL.position.set(-0.048, 0.28, 0.135);
-    zipL.scale.set(0.42, 0.96, 1);
-    const zipR = zipL.clone();
-    zipR.position.x = 0.048;
-    decorGroup.add(innerTee, zipL, zipR);
+    // Open front bomber jacket lapels + collar standing + waist ribbing (inner crew tee is full SkinnedMesh!)
+    const jacketAccentMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(shirtColor).multiplyScalar(0.84),
+      normalMap: maps.clothNormal,
+      normalScale: new THREE.Vector2(0.75, 0.75),
+      roughness: 0.56,
+    });
+    const standingCollar = new THREE.Mesh(CHAR_GEOS.jacketCollar, jacketAccentMat);
+    standingCollar.rotation.set(Math.PI / 2 + 0.14, 0, Math.PI * 0.72);
+    standingCollar.position.set(0, 0.545, -0.004);
+
+    const lapelL = new THREE.Mesh(CHAR_GEOS.jacketLapel, jacketAccentMat);
+    lapelL.position.set(-0.044, 0.25, chestZ - 0.002);
+    lapelL.rotation.set(-0.08, 0.22, 0);
+    const lapelR = new THREE.Mesh(CHAR_GEOS.jacketLapel, jacketAccentMat);
+    lapelR.position.set(0.044, 0.25, chestZ - 0.002);
+    lapelR.rotation.set(-0.08, -0.22, 0);
+
+    const hemRib = new THREE.Mesh(CHAR_GEOS.jacketHemRib, jacketAccentMat);
+    hemRib.rotation.set(Math.PI / 2, 0, Math.PI * 0.62);
+    hemRib.position.set(0, -0.025, -0.004);
+    hemRib.scale.set(isFemale ? 0.96 : 1.04, 0.75, 1.0);
+
+    decorGroup.add(standingCollar, lapelL, lapelR, hemRib);
   } else if (style === 'lurik') {
     const sash = new THREE.Mesh(
       CHAR_GEOS.placket,
@@ -554,53 +1611,83 @@ function buildOutfitDecor(
         roughness: 0.72,
       })
     );
-    sash.position.set(0.03, 0.27, 0.133);
-    sash.rotation.z = -0.14;
-    sash.scale.set(1.55, 0.96, 1);
+    sash.position.set(0.02, 0.26, chestZ + 0.004);
+    sash.rotation.set(-0.10, 0, -0.14);
+    sash.scale.set(1.4, 0.96, 1);
     decorGroup.add(sash);
   } else if (style === 'kebaya') {
     const kutu = new THREE.Mesh(
       CHAR_GEOS.placket,
       new THREE.MeshStandardMaterial({
         color: shirtColor,
-        roughness: 0.65,
+        normalMap: maps.clothNormal,
+        roughness: 0.68,
       })
     );
-    kutu.position.set(0, 0.27, 0.133);
-    kutu.scale.set(1.9, 0.94, 1);
+    kutu.position.set(0, 0.26, chestZ + 0.005);
+    kutu.rotation.x = -0.10;
+    kutu.scale.set(1.75, 0.92, 1);
     const selendang = new THREE.Mesh(
       CHAR_GEOS.selendang,
       new THREE.MeshStandardMaterial({
         color: 0xfef3c7,
         map: textures ? textures.batikWall : null,
+        normalMap: maps.clothNormal,
         roughness: 0.78,
       })
     );
-    selendang.position.set(-0.135, 0.27, 0.01);
-    selendang.rotation.z = 0.12;
+    selendang.position.set(-0.105, 0.27, 0.008);
+    selendang.rotation.z = 0.10;
     decorGroup.add(kutu, selendang);
-  } else {
-    // T-shirt chest pocket accent
-    const pocket = new THREE.Mesh(CHAR_GEOS.pocket, trimMat);
-    pocket.position.set(0.095, 0.34, 0.128);
-    decorGroup.add(pocket);
   }
 }
 
 export function createCharacterRig(rawOptions: CharacterBuildOptions): CharacterRig {
   const options = rawOptions.randomize ? resolveProceduralCharacterOptions(rawOptions) : rawOptions;
+  const maps = getCharMaps(options.textures);
+
   const group = new THREE.Group();
   const bodyGroup = new THREE.Group();
-  const pelvisGroup = new THREE.Group();
-  const spineGroup = new THREE.Group();
-  spineGroup.position.set(0, 0.85, 0);
-  bodyGroup.add(pelvisGroup, spineGroup);
   group.add(bodyGroup);
 
-  const skinMat = new THREE.MeshStandardMaterial({
-    color: options.skinColor ?? 0xd19a72,
-    roughness: 0.62,
-    metalness: 0.02,
+  // Use THREE.Bone for the articulated hierarchy so SkinnedMesh deforms seamlessly across all joints
+  const pelvisGroup = new THREE.Bone();
+  const spineGroup = new THREE.Bone();
+  spineGroup.position.set(0, SPINE_BIND_Y, 0);
+  bodyGroup.add(pelvisGroup, spineGroup);
+
+  const useHijab = Boolean(options.hijab || options.hairStyle === 'hijab');
+  const isFemale =
+    options.gender === 'perempuan' ||
+    (!options.gender &&
+      (useHijab ||
+        options.hairStyle === 'ponytail' ||
+        options.hairStyle === 'bun_konde' ||
+        options.hairStyle === 'bob' ||
+        options.shirtStyle === 'kebaya'));
+
+  const baseSkinHex = options.skinColor ?? 0xd19a72;
+  const headSkinMat = new THREE.MeshStandardMaterial({
+    color: baseSkinHex,
+    map: maps.faceMap,
+    normalMap: maps.skinNormal,
+    normalScale: new THREE.Vector2(0.42, 0.42),
+    roughness: 0.56,
+    metalness: 0.01,
+  });
+  const bodySkinMat = new THREE.MeshStandardMaterial({
+    color: baseSkinHex,
+    map: maps.bodySkinMap,
+    normalMap: maps.skinNormal,
+    normalScale: new THREE.Vector2(0.36, 0.36),
+    roughness: 0.58,
+    metalness: 0.01,
+  });
+
+  const skinCol = new THREE.Color(baseSkinHex);
+  const eyelidMat = new THREE.MeshStandardMaterial({
+    color: skinCol.clone().multiplyScalar(0.84),
+    roughness: 0.54,
   });
 
   const outfitCfg = options.outfit ? OUTFIT_COLORS[options.outfit] : null;
@@ -609,7 +1696,6 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
   const shirtStyle: CharacterShirtStyle = options.shirtStyle ?? (outfitCfg ? outfitCfg.style : 'tshirt');
   const pantsStyle: CharacterPantsStyle = options.pantsStyle ?? 'jeans';
   const shoeStyle: CharacterShoeStyle = options.shoeStyle ?? 'sneakers';
-  const useHijab = Boolean(options.hijab || options.hairStyle === 'hijab');
   const hairStyle: CharacterHairStyle = useHijab ? 'hijab' : (options.hairStyle ?? 'short_part');
   const hairColor = options.hairColor ?? 0x171412;
   const hijabColor = options.hijabColor ?? options.hairColor ?? 0xf8fafc;
@@ -618,8 +1704,8 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
     options.shoeColor !== undefined
       ? new THREE.MeshStandardMaterial({
           color: options.shoeColor,
-          roughness: shoeStyle === 'pantofel' ? 0.24 : shoeStyle === 'sandal' ? 0.65 : 0.45,
-          metalness: shoeStyle === 'pantofel' ? 0.2 : 0.08,
+          roughness: shoeStyle === 'pantofel' ? 0.24 : shoeStyle === 'sandal' ? 0.65 : 0.46,
+          metalness: shoeStyle === 'pantofel' ? 0.18 : 0.08,
         })
       : null;
 
@@ -632,141 +1718,154 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
 
   const shirtMat = new THREE.MeshStandardMaterial({
     color: shirtColor,
-    roughness: 0.74,
-    metalness: outfitCfg?.metalness ?? 0.05,
+    roughness: shirtStyle === 'jaket' ? 0.58 : 0.78,
+    metalness: outfitCfg?.metalness ?? (shirtStyle === 'jaket' ? 0.08 : 0.03),
     map: shirtMap,
+    normalMap: maps.clothNormal,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    side: shirtStyle === 'jaket' ? THREE.DoubleSide : THREE.FrontSide,
+  });
+
+  const innerTeeMat = new THREE.MeshStandardMaterial({
+    color: 0xe8eaed,
+    roughness: 0.84,
+    metalness: 0.01,
+    normalMap: maps.clothNormal,
+    normalScale: new THREE.Vector2(0.55, 0.55),
   });
 
   const collarColor = outfitCfg ? outfitCfg.collar : 0xe5e7eb;
   const collarMat = new THREE.MeshStandardMaterial({
     color: collarColor,
-    roughness: 0.6,
+    roughness: 0.66,
+    normalMap: maps.clothNormal,
+    normalScale: new THREE.Vector2(0.45, 0.45),
   });
 
   const pantsMap =
-    pantsStyle === 'jeans' && options.textures
-      ? options.textures.denim
+    pantsStyle === 'jeans'
+      ? maps.denimColor
       : pantsStyle === 'sarung' && options.textures
         ? options.textures.batikWall
         : null;
 
   const pantsMat = new THREE.MeshStandardMaterial({
     color: pantsColor,
-    roughness: 0.82,
-    metalness: 0.03,
+    roughness: pantsStyle === 'jeans' ? 0.86 : 0.80,
+    metalness: 0.02,
     map: pantsMap,
+    normalMap: pantsStyle === 'jeans' ? maps.denimNormal : maps.clothNormal,
+    normalScale: new THREE.Vector2(0.95, 0.95),
   });
 
   const hairMat = new THREE.MeshStandardMaterial({
     color: hairColor,
-    roughness: 0.85,
-    metalness: 0.04,
+    normalMap: maps.hairNormal,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughness: 0.62,
+    metalness: 0.06,
   });
   const hijabMat = new THREE.MeshStandardMaterial({
     color: hijabColor,
-    roughness: 0.78,
+    normalMap: maps.clothNormal,
+    normalScale: new THREE.Vector2(0.6, 0.6),
+    roughness: 0.76,
     metalness: 0.03,
+    side: THREE.DoubleSide,
+  });
+  const hijabCiputMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(hijabColor).multiplyScalar(0.80),
+    roughness: 0.85,
+    side: THREE.DoubleSide,
+  });
+
+  const eyeballMat = new THREE.MeshStandardMaterial({
+    map: maps.eyeIris,
+    roughness: 0.16,
+    metalness: 0.04,
   });
 
   const shirtMeshes: THREE.Mesh[] = [];
   const pantsMeshes: THREE.Mesh[] = [];
 
-  // Articulated anatomical Legs (hip -> knee -> ankle) attached to pelvisGroup
-  const makeLeg = (xOff: number) => {
-    const legPivot = new THREE.Group();
+  // ----- Build 15-Bone Hierarchy (exact same coordinates as legacy pivots!) -----
+  const hipX = isFemale ? 0.092 : 0.096;
+  const makeLegBones = (xOff: number) => {
+    const legPivot = new THREE.Bone();
     legPivot.position.set(xOff, RIG_HIP_Y, 0);
-
-    const hipSphere = new THREE.Mesh(CHAR_GEOS.hipSphere, pantsMat);
-    const thigh = new THREE.Mesh(CHAR_GEOS.thigh, pantsMat);
-    pantsMeshes.push(hipSphere, thigh);
-    legPivot.add(hipSphere, thigh);
+    const kneePivot = new THREE.Bone();
+    kneePivot.position.set(0, -RIG_THIGH_LEN, 0);
+    const anklePivot = new THREE.Bone();
+    anklePivot.position.set(0, -RIG_SHIN_LEN, 0);
+    legPivot.add(kneePivot);
+    kneePivot.add(anklePivot);
 
     if (pantsStyle === 'cargo') {
       const pocket = new THREE.Mesh(CHAR_GEOS.cargoPocket, pantsMat);
-      pocket.position.set(xOff < 0 ? -0.072 : 0.072, -0.17, 0.005);
+      pocket.position.set(xOff < 0 ? -0.068 : 0.068, -0.17, 0.005);
       pantsMeshes.push(pocket);
       legPivot.add(pocket);
     }
 
-    const kneePivot = new THREE.Group();
-    kneePivot.position.set(0, -RIG_THIGH_LEN, 0);
-    legPivot.add(kneePivot);
-
-    const lowerMat = pantsStyle === 'shorts' ? skinMat : pantsMat;
-    const kneeCap = new THREE.Mesh(CHAR_GEOS.kneeCap, lowerMat);
-    const calfGeo = pantsStyle === 'kulot' ? CHAR_GEOS.kulotCalf : CHAR_GEOS.calf;
-    const calf = new THREE.Mesh(calfGeo, lowerMat);
-    if (pantsStyle !== 'shorts') {
-      pantsMeshes.push(kneeCap, calf);
-    }
-    kneePivot.add(kneeCap, calf);
-
-    if (pantsStyle === 'jeans') {
-      const cuff = new THREE.Mesh(CHAR_GEOS.pantCuff, SHARED_CHAR_MATS.cuffWhite);
-      cuff.rotation.x = Math.PI / 2;
-      cuff.position.y = -0.325;
-      kneePivot.add(cuff);
-    }
-
-    const anklePivot = new THREE.Group();
-    anklePivot.position.set(0, -RIG_SHIN_LEN, 0);
-    kneePivot.add(anklePivot);
-
-    if (pantsStyle !== 'kulot') {
-      const ankleJoint = new THREE.Mesh(CHAR_GEOS.ankleJoint, lowerMat);
-      if (pantsStyle !== 'shorts') {
-        pantsMeshes.push(ankleJoint);
-      }
-      anklePivot.add(ankleJoint);
-    }
-
-    // Sculpted ergonomic shoes/sandals with beveled footprint sole (bottom at y = -0.078)
+    // Footwear mounted at anklePivot (bottom flush at y = -0.078)
     if (shoeStyle === 'sandal') {
-      const bareFoot = new THREE.Mesh(CHAR_GEOS.shoeUpper, skinMat);
-      bareFoot.rotation.x = Math.PI / 2;
-      bareFoot.position.set(0, -0.032, 0.042);
-      bareFoot.scale.set(0.96, 0.96, 0.72);
+      const bareFoot = new THREE.Mesh(CHAR_GEOS.bareFoot, bodySkinMat);
+      bareFoot.position.set(0, -0.056, 0.0);
+      bareFoot.scale.set(0.92, 0.85, 0.96);
+
+      for (let t = 0; t < 4; t++) {
+        const toe = new THREE.Mesh(CHAR_GEOS.toeSegment, bodySkinMat);
+        toe.rotation.x = Math.PI / 2;
+        toe.position.set(-0.021 + t * 0.014, -0.058, 0.132 - t * 0.002);
+        anklePivot.add(toe);
+      }
 
       const strap = new THREE.Mesh(CHAR_GEOS.sandalStrap, customShoeMat ?? SHARED_CHAR_MATS.belt);
       strap.position.set(0, -0.036, 0.055);
-      strap.rotation.x = 0.2;
+      strap.rotation.x = 0.22;
 
       const sole = new THREE.Mesh(CHAR_GEOS.shoeSole, SHARED_CHAR_MATS.darkSole);
-      sole.position.set(0, -0.072, 0.015);
+      sole.position.set(0, -0.071, 0.016);
       anklePivot.add(bareFoot, strap, sole);
     } else if (shoeStyle === 'pantofel') {
       const pantofelMat = customShoeMat ?? SHARED_CHAR_MATS.pantofel;
-      const shoeUpper = new THREE.Mesh(CHAR_GEOS.shoeUpper, pantofelMat);
-      shoeUpper.rotation.x = Math.PI / 2;
-      shoeUpper.position.set(0, -0.028, 0.046);
-      shoeUpper.scale.set(0.98, 1.04, 0.8);
+      const shoeUpper = new THREE.Mesh(CHAR_GEOS.shoeVamp, pantofelMat);
+      shoeUpper.position.set(0, -0.055, 0.004);
+      shoeUpper.scale.set(0.94, 0.96, 1.03);
 
-      const heelCup = new THREE.Mesh(CHAR_GEOS.shoeHeel, pantofelMat);
-      heelCup.position.set(0, -0.025, -0.025);
+      const shoeCollar = new THREE.Mesh(CHAR_GEOS.shoeCollar, pantofelMat);
+      shoeCollar.rotation.x = Math.PI / 2;
+      shoeCollar.position.set(0, -0.008, -0.006);
 
       const shoeSole = new THREE.Mesh(CHAR_GEOS.shoeSole, SHARED_CHAR_MATS.darkSole);
-      shoeSole.position.set(0, -0.072, 0.015);
-      anklePivot.add(shoeUpper, heelCup, shoeSole);
+      shoeSole.position.set(0, -0.071, 0.016);
+      anklePivot.add(shoeUpper, shoeCollar, shoeSole);
     } else {
       const sneakerMat = customShoeMat ?? SHARED_CHAR_MATS.shoe;
-      const shoeUpper = new THREE.Mesh(CHAR_GEOS.shoeUpper, sneakerMat);
-      shoeUpper.rotation.x = Math.PI / 2;
-      shoeUpper.position.set(0, -0.028, 0.042);
-      shoeUpper.scale.set(1.02, 1.0, 0.84);
+      const shoeUpper = new THREE.Mesh(CHAR_GEOS.shoeVamp, sneakerMat);
+      shoeUpper.position.set(0, -0.055, 0.002);
 
-      const heelCup = new THREE.Mesh(CHAR_GEOS.shoeHeel, sneakerMat);
-      heelCup.position.set(0, -0.025, -0.024);
+      const shoeCollar = new THREE.Mesh(CHAR_GEOS.shoeCollar, sneakerMat);
+      shoeCollar.rotation.x = Math.PI / 2;
+      shoeCollar.position.set(0, -0.006, -0.006);
 
-      const shoeSole = new THREE.Mesh(CHAR_GEOS.shoeSole, SHARED_CHAR_MATS.sole);
-      shoeSole.position.set(0, -0.072, 0.015);
-      anklePivot.add(shoeUpper, heelCup, shoeSole);
+      const tongue = new THREE.Mesh(CHAR_GEOS.shoeTongue, sneakerMat);
+      tongue.position.set(0, -0.014, 0.034);
+      tongue.rotation.x = -0.45;
+
+      const shoeSole = new THREE.Mesh(
+        CHAR_GEOS.shoeSole,
+        options.shoeColor !== undefined ? SHARED_CHAR_MATS.darkSole : SHARED_CHAR_MATS.sneakerSole
+      );
+      shoeSole.position.set(0, -0.071, 0.016);
+      anklePivot.add(shoeUpper, shoeCollar, tongue, shoeSole);
     }
 
     return { legPivot, kneePivot, anklePivot };
   };
 
-  const leftLegBuilt = makeLeg(-0.108);
-  const rightLegBuilt = makeLeg(0.108);
+  const leftLegBuilt = makeLegBones(-hipX);
+  const rightLegBuilt = makeLegBones(hipX);
   const leftLeg = leftLegBuilt.legPivot;
   const rightLeg = rightLegBuilt.legPivot;
   const leftKnee = leftLegBuilt.kneePivot;
@@ -775,58 +1874,202 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
   const rightAnkle = rightLegBuilt.anklePivot;
   pelvisGroup.add(leftLeg, rightLeg);
 
-  const pelvis = new THREE.Mesh(CHAR_GEOS.pelvis, pantsMat);
-  pelvis.position.y = 0.79;
-  pelvis.scale.set(1.22, 0.65, 0.84);
+  const armX = isFemale ? 0.172 : 0.194;
+  const makeArmBones = (xOff: number, withWatch: boolean) => {
+    const armPivot = new THREE.Bone();
+    armPivot.position.set(xOff, ARM_LOCAL_Y, 0);
+    const elbowPivot = new THREE.Bone();
+    elbowPivot.position.set(0, ELBOW_LOCAL_Y, 0);
+    const wristPivot = new THREE.Bone();
+    wristPivot.position.set(0, WRIST_LOCAL_Y, 0);
+    armPivot.add(elbowPivot);
+    elbowPivot.add(wristPivot);
+
+    const armScale = isFemale ? 0.87 : 1.0;
+    const isLongSleeve = shirtStyle === 'batik' || shirtStyle === 'lurik' || shirtStyle === 'kebaya';
+    if (withWatch && !isLongSleeve) {
+      const watch = new THREE.Mesh(CHAR_GEOS.wristWatch, SHARED_CHAR_MATS.watch);
+      watch.rotation.x = Math.PI / 2;
+      watch.position.y = -0.195;
+      watch.scale.setScalar(armScale);
+      elbowPivot.add(watch);
+    }
+
+    // Anatomical 5-finger human hand with tapered thenar pad & curved multi-joint fingers
+    const handGroup = new THREE.Group();
+    const isNegX = xOff < 0;
+    handGroup.rotation.y = isNegX ? Math.PI * 0.44 : -Math.PI * 0.44;
+    handGroup.scale.setScalar(isFemale ? 0.89 : 1.0);
+    wristPivot.add(handGroup);
+
+    const palm = new THREE.Mesh(CHAR_GEOS.palm, bodySkinMat);
+    palm.position.set(0, -0.028, 0.002);
+    palm.castShadow = true;
+
+    const thenar = new THREE.Mesh(CHAR_GEOS.thenarPad, bodySkinMat);
+    thenar.position.set(isNegX ? -0.015 : 0.015, -0.025, 0.008);
+    thenar.scale.set(0.85, 1.35, 0.8);
+    handGroup.add(palm, thenar);
+
+    const fingerConfigs = [
+      { x: -0.0155, len: 0.94, z: 0.004 },
+      { x: -0.0052, len: 1.04, z: 0.005 },
+      { x: 0.0052, len: 0.98, z: 0.004 },
+      { x: 0.0155, len: 0.80, z: 0.002 },
+    ];
+    for (const fc of fingerConfigs) {
+      const finger = new THREE.Mesh(CHAR_GEOS.curvedFinger, bodySkinMat);
+      finger.position.set(fc.x * (isNegX ? 1 : -1), -0.050, fc.z);
+      finger.scale.set(0.96, fc.len, 0.96);
+      handGroup.add(finger);
+    }
+
+    const thumb = new THREE.Mesh(CHAR_GEOS.thumbSegment, bodySkinMat);
+    const thumbX = isNegX ? -0.024 : 0.024;
+    thumb.position.set(thumbX, -0.029, 0.013);
+    thumb.rotation.set(-0.28, 0, isNegX ? 0.46 : -0.46);
+    handGroup.add(thumb);
+
+    return { armPivot, elbowPivot, wristPivot };
+  };
+
+  const leftArmBuilt = makeArmBones(-armX, true);
+  const rightArmBuilt = makeArmBones(armX, false);
+  const leftArm = leftArmBuilt.armPivot;
+  const rightArm = rightArmBuilt.armPivot;
+  const leftElbow = leftArmBuilt.elbowPivot;
+  const rightElbow = rightArmBuilt.elbowPivot;
+  const leftWrist = leftArmBuilt.wristPivot;
+  const rightWrist = rightArmBuilt.wristPivot;
+  spineGroup.add(leftArm, rightArm);
+
+  const head = new THREE.Bone();
+  head.position.set(0, HEAD_LOCAL_Y, 0);
+  spineGroup.add(head);
+
+  // Build Skeleton in exact BONE_IDX order & bind in bodyGroup identity pose
+  const bones: THREE.Bone[] = [
+    pelvisGroup,
+    spineGroup,
+    head,
+    leftArm,
+    leftElbow,
+    leftWrist,
+    rightArm,
+    rightElbow,
+    rightWrist,
+    leftLeg,
+    leftKnee,
+    leftAnkle,
+    rightLeg,
+    rightKnee,
+    rightAnkle,
+  ];
+  bodyGroup.updateMatrixWorld(true);
+  const skeleton = new THREE.Skeleton(bones);
+
+  const bindSkinned = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+    const sm = new THREE.SkinnedMesh(geo, mat);
+    sm.castShadow = true;
+    sm.receiveShadow = true;
+    sm.frustumCulled = false;
+    sm.bind(skeleton);
+    bodyGroup.add(sm);
+    return sm;
+  };
+
+  // ----- Continuous Skinned Body & Garments (Zero Spherical Joint Seams) -----
+  // 1. Continuous Neck (spine -> head)
+  bindSkinned(getSkinnedNeckGeo(isFemale), bodySkinMat);
+
+  // 2. Torso & Jacket Layering
+  let torso: THREE.Mesh;
+  if (shirtStyle === 'jaket') {
+    // Inner crew-neck cotton tee + outer open-front bomber jacket shell (Reference Image 3 style!)
+    bindSkinned(getSkinnedTorsoGeo(isFemale, 'tee'), innerTeeMat);
+    torso = bindSkinned(getSkinnedTorsoGeo(isFemale, 'jacket_outer'), shirtMat);
+    shirtMeshes.push(torso);
+  } else {
+    torso = bindSkinned(getSkinnedTorsoGeo(isFemale, 'fitted'), shirtMat);
+    shirtMeshes.push(torso);
+  }
+
+  // 3. Continuous Sleeves + Forearms (shoulder -> elbow -> wrist)
+  if (shirtStyle === 'jaket') {
+    const lSleeve = bindSkinned(getSkinnedArmGeo(-1, isFemale, 'jacket_sleeve'), shirtMat);
+    const rSleeve = bindSkinned(getSkinnedArmGeo(1, isFemale, 'jacket_sleeve'), shirtMat);
+    shirtMeshes.push(lSleeve, rSleeve);
+    bindSkinned(getSkinnedArmGeo(-1, isFemale, 'jacket_forearm_skin'), bodySkinMat);
+    bindSkinned(getSkinnedArmGeo(1, isFemale, 'jacket_forearm_skin'), bodySkinMat);
+  } else if (shirtStyle === 'batik' || shirtStyle === 'lurik' || shirtStyle === 'kebaya') {
+    const lSleeve = bindSkinned(getSkinnedArmGeo(-1, isFemale, 'long_sleeve'), shirtMat);
+    const rSleeve = bindSkinned(getSkinnedArmGeo(1, isFemale, 'long_sleeve'), shirtMat);
+    shirtMeshes.push(lSleeve, rSleeve);
+  } else {
+    const lSleeve = bindSkinned(getSkinnedArmGeo(-1, isFemale, 'short_sleeve'), shirtMat);
+    const rSleeve = bindSkinned(getSkinnedArmGeo(1, isFemale, 'short_sleeve'), shirtMat);
+    shirtMeshes.push(lSleeve, rSleeve);
+    bindSkinned(getSkinnedArmGeo(-1, isFemale, 'forearm_skin'), bodySkinMat);
+    bindSkinned(getSkinnedArmGeo(1, isFemale, 'forearm_skin'), bodySkinMat);
+  }
+
+  // 4. Pelvis Saddle, Belt & Continuous Skinned Legs/Trousers (hip -> knee -> ankle)
+  const pelvis = new THREE.Mesh(
+    isFemale ? CHAR_GEOS.pelvisFemale : CHAR_GEOS.pelvisMale,
+    pantsMat
+  );
+  pelvis.castShadow = true;
+  pelvis.receiveShadow = true;
   pantsMeshes.push(pelvis);
 
-  // Belt & rounded metallic buckle stay anchored on pelvisGroup
   const belt = new THREE.Mesh(CHAR_GEOS.belt, SHARED_CHAR_MATS.belt);
-  belt.position.y = 0.805;
-  belt.scale.set(1.16, 1.0, 0.76);
+  belt.position.y = 0.848;
+  belt.scale.set(isFemale ? 0.92 : 1.0, 1.0, 0.74);
   const buckle = new THREE.Mesh(CHAR_GEOS.buckle, SHARED_CHAR_MATS.buckle);
-  buckle.position.set(0, 0.805, 0.132);
+  buckle.position.set(0, 0.848, 0.112);
   pelvisGroup.add(pelvis, belt, buckle);
 
-  // Draped traditional Sarung / Jarik wrap over thighs & knees
   if (pantsStyle === 'sarung') {
-    const sarungWrap = new THREE.Mesh(CHAR_GEOS.sarungSkirt, pantsMat);
-    sarungWrap.position.y = 0.45;
-    sarungWrap.scale.set(1.12, 1.0, 0.82);
-    pantsMeshes.push(sarungWrap);
-    pelvisGroup.add(sarungWrap);
+    const sarungMesh = bindSkinned(getSkinnedSarungGeo(isFemale), pantsMat);
+    pantsMeshes.push(sarungMesh);
+    bindSkinned(getSkinnedLegGeo(-1, isFemale, 'lower_skin'), bodySkinMat);
+    bindSkinned(getSkinnedLegGeo(1, isFemale, 'lower_skin'), bodySkinMat);
+  } else if (pantsStyle === 'shorts') {
+    const lShort = bindSkinned(getSkinnedLegGeo(-1, isFemale, 'pants_shorts'), pantsMat);
+    const rShort = bindSkinned(getSkinnedLegGeo(1, isFemale, 'pants_shorts'), pantsMat);
+    pantsMeshes.push(lShort, rShort);
+    bindSkinned(getSkinnedLegGeo(-1, isFemale, 'lower_skin'), bodySkinMat);
+    bindSkinned(getSkinnedLegGeo(1, isFemale, 'lower_skin'), bodySkinMat);
+  } else if (pantsStyle === 'kulot') {
+    const lKulot = bindSkinned(getSkinnedLegGeo(-1, isFemale, 'pants_kulot'), pantsMat);
+    const rKulot = bindSkinned(getSkinnedLegGeo(1, isFemale, 'pants_kulot'), pantsMat);
+    pantsMeshes.push(lKulot, rKulot);
+  } else {
+    const lPants = bindSkinned(getSkinnedLegGeo(-1, isFemale, 'pants_full'), pantsMat);
+    const rPants = bindSkinned(getSkinnedLegGeo(1, isFemale, 'pants_full'), pantsMat);
+    pantsMeshes.push(lPants, rPants);
   }
 
-  // Torso, Collar, Outfit Decor, Backpack & Towel attached to articulated spineGroup (origin at waist y = 0.85)
-  const torso = new THREE.Mesh(CHAR_GEOS.torso, shirtMat);
-  torso.position.y = 0;
-  if (options.gender === 'perempuan') {
-    torso.scale.set(0.9, 0.98, 0.94);
-  }
-  torso.castShadow = true;
-  torso.receiveShadow = true;
-  shirtMeshes.push(torso);
-  spineGroup.add(torso);
-
-  const collar = new THREE.Mesh(CHAR_GEOS.collar, collarMat);
-  collar.rotation.x = Math.PI / 2;
-  collar.position.set(0, 0.55, 0.01);
-  collar.scale.set(1.08, 0.92, 1);
+  // ----- Collar, Decor, Backpack & Neck Towel on Spine -----
+  const collar = new THREE.Mesh(CHAR_GEOS.collar, shirtStyle === 'jaket' ? innerTeeMat : collarMat);
+  collar.rotation.x = Math.PI / 2 + 0.14;
+  collar.position.set(0, 0.542, 0.006);
+  collar.scale.set(isFemale ? 0.94 : 1.02, 0.9, 1);
   spineGroup.add(collar);
 
   const outfitDecorGroup = new THREE.Group();
-  buildOutfitDecor(outfitDecorGroup, shirtStyle, shirtColor, collarColor, options.textures);
+  buildOutfitDecor(outfitDecorGroup, shirtStyle, shirtColor, collarColor, options.textures, isFemale);
   spineGroup.add(outfitDecorGroup);
 
   if (options.hasBackpack) {
     const pack = new THREE.Mesh(CHAR_GEOS.backpack, SHARED_CHAR_MATS.backpack);
-    pack.position.set(0, 0.27, -0.18);
+    pack.position.set(0, 0.27, -0.155);
     pack.castShadow = true;
     const flap = new THREE.Mesh(CHAR_GEOS.backpackFlap, SHARED_CHAR_MATS.backpackAccent);
-    flap.position.set(0, 0.39, -0.186);
-    [-0.1, 0.1].forEach((sx) => {
+    flap.position.set(0, 0.38, -0.16);
+    [-0.088, 0.088].forEach((sx) => {
       const strap = new THREE.Mesh(CHAR_GEOS.strap, SHARED_CHAR_MATS.belt);
-      strap.position.set(sx, 0.3, -0.02);
+      strap.position.set(sx, 0.30, -0.01);
       spineGroup.add(strap);
     });
     spineGroup.add(pack, flap);
@@ -836,183 +2079,121 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
     const towel = new THREE.Mesh(CHAR_GEOS.neckTowel, SHARED_CHAR_MATS.towel);
     towel.rotation.x = Math.PI / 2 + 0.18;
     towel.rotation.z = -Math.PI * 0.22;
-    towel.position.set(0, 0.55, 0.01);
+    towel.position.set(0, 0.54, 0.008);
     spineGroup.add(towel);
   }
 
-  // Articulated Arms (shoulder -> elbow -> wrist/hand) attached to spineGroup
-  const makeArm = (xOff: number, withWatch: boolean) => {
-    const armPivot = new THREE.Group();
-    armPivot.position.set(xOff, 0.47, 0);
+  // ----- Unified Sculpted 64x48 Human Head + UV-Aligned Face + Recessed Eyes -----
+  const skull = new THREE.Mesh(
+    isFemale ? CHAR_GEOS.headFemale : CHAR_GEOS.headMale,
+    headSkinMat
+  );
+  skull.position.set(0, 0.145, 0);
+  skull.castShadow = true;
+  skull.receiveShadow = true;
+  head.add(skull);
 
-    const shoulderCap = new THREE.Mesh(CHAR_GEOS.shoulderCap, shirtMat);
-    const sleeve = new THREE.Mesh(CHAR_GEOS.sleeve, shirtMat);
-    shirtMeshes.push(shoulderCap, sleeve);
-    armPivot.add(shoulderCap, sleeve);
-
-    const elbowPivot = new THREE.Group();
-    elbowPivot.position.set(0, -0.23, 0);
-    armPivot.add(elbowPivot);
-
-    const isLongSleeve = shirtStyle === 'jaket' || shirtStyle === 'batik' || shirtStyle === 'lurik';
-    const armLowerMat = isLongSleeve ? shirtMat : skinMat;
-    const elbowJoint = new THREE.Mesh(CHAR_GEOS.elbowJoint, armLowerMat);
-    const forearm = new THREE.Mesh(CHAR_GEOS.forearm, armLowerMat);
-    if (isLongSleeve) {
-      shirtMeshes.push(elbowJoint, forearm);
-      const cuff = new THREE.Mesh(CHAR_GEOS.cuff, collarMat);
-      cuff.rotation.x = Math.PI / 2;
-      cuff.position.y = -0.215;
-      elbowPivot.add(cuff);
-    }
-    elbowPivot.add(elbowJoint, forearm);
-
-    if (withWatch && !isLongSleeve) {
-      const watch = new THREE.Mesh(CHAR_GEOS.wristWatch, SHARED_CHAR_MATS.watch);
-      watch.rotation.x = Math.PI / 2;
-      watch.position.y = -0.2;
-      elbowPivot.add(watch);
-    }
-
-    const wristPivot = new THREE.Group();
-    wristPivot.position.set(0, -0.23, 0);
-    elbowPivot.add(wristPivot);
-
-    const palm = new THREE.Mesh(CHAR_GEOS.palm, skinMat);
-    palm.position.set(0, -0.032, 0.004);
-    palm.rotation.y = xOff < 0 ? 0.14 : -0.14;
-    const fingers = new THREE.Mesh(CHAR_GEOS.fingers, skinMat);
-    fingers.position.set(0, -0.072, 0.008);
-    fingers.scale.set(1.0, 0.9, 0.72);
-    const thumb = new THREE.Mesh(CHAR_GEOS.thumb, skinMat);
-    thumb.position.set(xOff < 0 ? 0.028 : -0.028, -0.025, 0.024);
-    thumb.rotation.x = 0.45;
-    wristPivot.add(palm, fingers, thumb);
-
-    return { armPivot, elbowPivot, wristPivot };
-  };
-
-  const leftArmBuilt = makeArm(-0.242, true);
-  const rightArmBuilt = makeArm(0.242, false);
-  const leftArm = leftArmBuilt.armPivot;
-  const rightArm = rightArmBuilt.armPivot;
-  const leftElbow = leftArmBuilt.elbowPivot;
-  const rightElbow = rightArmBuilt.elbowPivot;
-  const leftWrist = leftArmBuilt.wristPivot;
-  const rightWrist = rightArmBuilt.wristPivot;
-  spineGroup.add(leftArm, rightArm);
-
-  // Sculpted Human Head + Facial Features + Hair Varieties attached to spineGroup
-  const head = new THREE.Group();
-  head.position.set(0, 0.57, 0);
-
-  const neck = new THREE.Mesh(CHAR_GEOS.neck, skinMat);
-  neck.position.y = 0.04;
-  head.add(neck);
-
-  const cranium = new THREE.Mesh(CHAR_GEOS.cranium, skinMat);
-  cranium.position.y = 0.21;
-  cranium.scale.set(0.95, 1.08, 1.02);
-  cranium.castShadow = true;
-  head.add(cranium);
-
-  const jaw = new THREE.Mesh(CHAR_GEOS.jaw, skinMat);
-  jaw.position.set(0, 0.14, 0.03);
-  jaw.scale.set(0.94, 0.85, 0.96);
-  head.add(jaw);
-
-  const earL = new THREE.Mesh(CHAR_GEOS.ear, skinMat);
-  earL.position.set(-0.134, 0.2, -0.005);
-  earL.scale.set(0.45, 1.15, 0.75);
-  const earR = earL.clone();
-  earR.position.x = 0.134;
-  head.add(earL, earR);
-
-  const nose = new THREE.Mesh(CHAR_GEOS.nose, skinMat);
-  nose.position.set(0, 0.195, 0.145);
-  nose.rotation.x = -0.25;
-  head.add(nose);
-
-  const mouth = new THREE.Mesh(CHAR_GEOS.mouth, SHARED_CHAR_MATS.lips);
-  mouth.rotation.z = Math.PI / 2;
-  mouth.position.set(0, 0.132, 0.126);
-  head.add(mouth);
+  if (hairStyle !== 'hijab') {
+    const earX = isFemale ? 0.072 : 0.076;
+    const earL = new THREE.Mesh(CHAR_GEOS.ear, bodySkinMat);
+    earL.position.set(-earX, 0.144, -0.005);
+    earL.rotation.y = -0.24;
+    const earR = new THREE.Mesh(CHAR_GEOS.ear, bodySkinMat);
+    earR.position.set(earX, 0.144, -0.005);
+    earR.rotation.y = 0.24;
+    head.add(earL, earR);
+  }
 
   if (options.hasMustache) {
     const stache = new THREE.Mesh(CHAR_GEOS.mustache, hairMat);
     stache.rotation.z = Math.PI / 2;
-    stache.position.set(0, 0.155, 0.132);
+    stache.position.set(0, 0.107, 0.090);
+    stache.scale.set(0.85, 0.9, 0.72);
     head.add(stache);
   }
 
-  [-0.05, 0.05].forEach((ex) => {
-    const sclera = new THREE.Mesh(CHAR_GEOS.eyeSclera, SHARED_CHAR_MATS.sclera);
-    sclera.position.set(ex, 0.225, 0.125);
-    sclera.scale.set(1.05, 0.85, 0.65);
-    const iris = new THREE.Mesh(CHAR_GEOS.eyeIris, SHARED_CHAR_MATS.iris);
-    iris.position.set(ex, 0.225, 0.136);
+  const eyeX = isFemale ? 0.0265 : 0.0285;
+  const eyeY = 0.1515;
+  const eyeZ = 0.0765;
+  [-eyeX, eyeX].forEach((ex) => {
+    const eyeball = new THREE.Mesh(CHAR_GEOS.eyeball, eyeballMat);
+    eyeball.position.set(ex, eyeY, eyeZ);
+    eyeball.scale.set(1.04, 0.88, 0.92);
+
+    const upperLid = new THREE.Mesh(CHAR_GEOS.eyelidArc, eyelidMat);
+    upperLid.position.set(ex, eyeY + 0.0022, eyeZ + 0.0042);
+    upperLid.rotation.set(0.32, ex < 0 ? -0.08 : 0.08, ex < 0 ? 0.04 : -0.04);
+    upperLid.scale.set(1.08, 0.82, 0.85);
+
     const brow = new THREE.Mesh(CHAR_GEOS.brow, hairMat);
-    brow.rotation.z = Math.PI / 2;
-    brow.position.set(ex, 0.256, 0.128);
-    head.add(sclera, iris, brow);
+    brow.rotation.z = Math.PI / 2 + (ex < 0 ? 0.09 : -0.09);
+    brow.rotation.y = ex < 0 ? 0.22 : -0.22;
+    brow.position.set(ex, eyeY + 0.0175, eyeZ + 0.0115);
+    brow.scale.set(0.85, 0.95, 0.65);
+    head.add(eyeball, upperLid, brow);
 
     if (options.hasGlasses) {
       const rim = new THREE.Mesh(CHAR_GEOS.glassesRim, SHARED_CHAR_MATS.glasses);
-      rim.position.set(ex, 0.224, 0.142);
+      rim.position.set(ex, eyeY, eyeZ + 0.017);
       head.add(rim);
+      const templeArm = new THREE.Mesh(CHAR_GEOS.glassesArm, SHARED_CHAR_MATS.glasses);
+      templeArm.rotation.x = Math.PI / 2;
+      templeArm.position.set(ex < 0 ? ex - 0.022 : ex + 0.022, eyeY + 0.002, eyeZ - 0.020);
+      head.add(templeArm);
     }
   });
 
   if (options.hasGlasses) {
     const bridge = new THREE.Mesh(CHAR_GEOS.glassesBridge, SHARED_CHAR_MATS.glasses);
     bridge.rotation.z = Math.PI / 2;
-    bridge.position.set(0, 0.226, 0.144);
+    bridge.position.set(0, eyeY + 0.002, eyeZ + 0.018);
     head.add(bridge);
   }
 
-  // Distinct Hairstyles & Hijab
+  // Distinct Fitted Hairstyles & Layered Hijab
+  const headScaleX = isFemale ? 0.95 : 1.0;
   if (hairStyle === 'hijab') {
-    const hijabWrap = new THREE.Mesh(CHAR_GEOS.hijabWrap, hijabMat);
-    hijabWrap.position.set(0, 0.205, -0.012);
-    hijabWrap.scale.set(1.0, 1.06, 1.05);
-    hijabWrap.rotation.x = -0.15;
-    const hijabDrape = new THREE.Mesh(CHAR_GEOS.hijabDrape, hijabMat);
-    hijabDrape.position.set(0, 0.05, -0.01);
-    hijabDrape.scale.set(0.95, 1.0, 0.85);
-    head.add(hijabWrap, hijabDrape);
+    const ciput = new THREE.Mesh(CHAR_GEOS.hijabCiput, hijabCiputMat);
+    const hijabHood = new THREE.Mesh(CHAR_GEOS.hijabHood, hijabMat);
+    hijabHood.castShadow = true;
+    hijabHood.receiveShadow = true;
+    head.add(ciput, hijabHood);
+
+    // Skinned neck & collarbone/chest drape anchored smoothly between HEAD and SPINE
+    bindSkinned(getSkinnedHijabDrapeGeo(isFemale), hijabMat);
   } else {
     const hairCap = new THREE.Mesh(CHAR_GEOS.hairCap, hairMat);
-    hairCap.position.set(0, hairStyle === 'elder' ? 0.228 : 0.215, -0.012);
-    hairCap.scale.set(0.97, 1.06, 1.04);
-    hairCap.rotation.x = hairStyle === 'elder' ? -0.35 : -0.18;
+    hairCap.position.set(0, hairStyle === 'elder' ? 0.165 : 0.154, -0.010);
+    hairCap.scale.set(headScaleX * 0.87, 1.16, 1.05);
+    hairCap.rotation.x = hairStyle === 'elder' ? -0.34 : -0.18;
     head.add(hairCap);
 
     const hairBack = new THREE.Mesh(CHAR_GEOS.hairBack, hairMat);
-    hairBack.position.set(0, 0.18, -0.036);
-    hairBack.scale.set(0.95, 0.92, 0.88);
+    hairBack.position.set(0, 0.132, -0.025);
+    hairBack.scale.set(headScaleX * 0.86, 1.04, 0.90);
     head.add(hairBack);
 
     if (hairStyle === 'short_part' || hairStyle === 'fade') {
       const fringe = new THREE.Mesh(CHAR_GEOS.hairFringe, hairMat);
-      fringe.rotation.z = Math.PI / 2 - 0.16;
-      fringe.position.set(0.01, 0.325, 0.075);
-      fringe.scale.set(hairStyle === 'fade' ? 0.55 : 0.72, 1, 0.75);
+      fringe.rotation.z = Math.PI / 2 - 0.14;
+      fringe.position.set(0.008, 0.228, 0.048);
+      fringe.scale.set(hairStyle === 'fade' ? 0.55 : 0.72, 1, 0.72);
       head.add(fringe);
 
       if (hairStyle === 'short_part') {
-        [-0.122, 0.122].forEach((sx) => {
+        [-0.072, 0.072].forEach((sx) => {
           const sb = new THREE.Mesh(CHAR_GEOS.hairSideburn, hairMat);
-          sb.position.set(sx, 0.215, 0.018);
+          sb.position.set(sx, 0.154, 0.014);
           head.add(sb);
         });
       }
     } else if (hairStyle === 'spiky') {
       const spikePositions: Array<[number, number, number, number]> = [
-        [-0.04, 0.365, 0.04, 0.25],
-        [0.03, 0.375, 0.02, -0.18],
-        [0.0, 0.37, -0.03, -0.35],
-        [-0.06, 0.345, -0.01, 0.4],
-        [0.06, 0.345, 0.03, -0.35],
+        [-0.024, 0.256, 0.028, 0.25],
+        [0.020, 0.262, 0.016, -0.18],
+        [0.0, 0.260, -0.020, -0.35],
+        [-0.038, 0.242, -0.008, 0.40],
+        [0.038, 0.242, 0.020, -0.35],
       ];
       spikePositions.forEach(([sx, sy, sz, rz]) => {
         const sp = new THREE.Mesh(CHAR_GEOS.hairSpike, hairMat);
@@ -1023,15 +2204,15 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
       });
     } else if (hairStyle === 'curly') {
       const curlOffsets: Array<[number, number, number, number]> = [
-        [0, 0.355, 0.045, 1.05],
-        [-0.065, 0.342, 0.03, 0.95],
-        [0.065, 0.342, 0.03, 0.95],
-        [-0.105, 0.295, -0.01, 0.9],
-        [0.105, 0.295, -0.01, 0.9],
-        [-0.055, 0.345, -0.055, 1.0],
-        [0.055, 0.345, -0.055, 1.0],
-        [0, 0.32, -0.105, 1.05],
-        [0, 0.335, 0.095, 0.85],
+        [0, 0.252, 0.032, 1.02],
+        [-0.042, 0.242, 0.020, 0.92],
+        [0.042, 0.242, 0.020, 0.92],
+        [-0.066, 0.208, -0.006, 0.88],
+        [0.066, 0.208, -0.006, 0.88],
+        [-0.036, 0.244, -0.038, 0.96],
+        [0.036, 0.244, -0.038, 0.96],
+        [0, 0.226, -0.072, 1.02],
+        [0, 0.236, 0.062, 0.82],
       ];
       curlOffsets.forEach(([cx, cy, cz, sc]) => {
         const clump = new THREE.Mesh(CHAR_GEOS.curlyClump, hairMat);
@@ -1042,61 +2223,61 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
     } else if (hairStyle === 'bob') {
       const fringe = new THREE.Mesh(CHAR_GEOS.hairFringe, hairMat);
       fringe.rotation.z = Math.PI / 2 - 0.1;
-      fringe.position.set(0, 0.325, 0.075);
-      fringe.scale.set(0.7, 1.05, 0.72);
+      fringe.position.set(0, 0.226, 0.050);
+      fringe.scale.set(0.68, 1.0, 0.70);
       const bobBack = new THREE.Mesh(CHAR_GEOS.bobBack, hairMat);
-      bobBack.position.set(0, 0.145, -0.032);
-      bobBack.scale.set(1.0, 1.0, 0.92);
+      bobBack.position.set(0, 0.105, -0.024);
+      bobBack.scale.set(0.95, 1.0, 0.95);
       const bobL = new THREE.Mesh(CHAR_GEOS.bobSide, hairMat);
-      bobL.position.set(-0.125, 0.155, 0.01);
-      bobL.rotation.z = -0.1;
+      bobL.position.set(-0.074, 0.112, 0.008);
+      bobL.rotation.z = -0.08;
       const bobR = new THREE.Mesh(CHAR_GEOS.bobSide, hairMat);
-      bobR.position.set(0.125, 0.155, 0.01);
-      bobR.rotation.z = 0.1;
+      bobR.position.set(0.074, 0.112, 0.008);
+      bobR.rotation.z = 0.08;
       head.add(fringe, bobBack, bobL, bobR);
     } else if (hairStyle === 'undercut') {
-      hairCap.scale.set(0.92, 1.04, 1.02);
+      hairCap.scale.set(0.82, 1.12, 1.02);
       const topWave = new THREE.Mesh(CHAR_GEOS.undercutTop, hairMat);
-      topWave.position.set(0, 0.318, 0.018);
+      topWave.position.set(0, 0.228, 0.010);
       topWave.rotation.x = -0.14;
       head.add(topWave);
     } else if (hairStyle === 'ponytail') {
       const fringe = new THREE.Mesh(CHAR_GEOS.hairFringe, hairMat);
       fringe.rotation.z = Math.PI / 2;
-      fringe.position.set(0, 0.322, 0.078);
-      fringe.scale.set(0.65, 1.08, 0.7);
+      fringe.position.set(0, 0.224, 0.050);
+      fringe.scale.set(0.62, 1.0, 0.68);
       const band = new THREE.Mesh(CHAR_GEOS.hairBand, collarMat);
-      band.position.set(0, 0.25, -0.15);
+      band.position.set(0, 0.172, -0.102);
       band.rotation.x = 0.35;
       const tail = new THREE.Mesh(CHAR_GEOS.ponytail, hairMat);
-      tail.position.set(0, 0.16, -0.19);
+      tail.position.set(0, 0.105, -0.128);
       tail.rotation.x = 0.28;
       head.add(fringe, band, tail);
     } else if (hairStyle === 'bun_konde') {
       const konde = new THREE.Mesh(CHAR_GEOS.kondeBun, hairMat);
-      konde.position.set(0, 0.17, -0.165);
-      konde.scale.set(1.05, 0.92, 0.88);
+      konde.position.set(0, 0.120, -0.114);
+      konde.scale.set(1.04, 0.92, 0.88);
       const pin = new THREE.Mesh(CHAR_GEOS.hairBand, SHARED_CHAR_MATS.buckle);
-      pin.position.set(0, 0.17, -0.148);
+      pin.position.set(0, 0.120, -0.098);
       head.add(konde, pin);
     }
   }
 
-  // Headgear
+  // Fitted Headgear
   if (options.hatType === 'caping') {
     const caping = new THREE.Mesh(CHAR_GEOS.caping, SHARED_CHAR_MATS.caping);
-    caping.position.y = 0.41;
+    caping.position.y = 0.295;
     head.add(caping);
   } else if (options.hatType === 'peci') {
     const peci = new THREE.Mesh(CHAR_GEOS.peci, SHARED_CHAR_MATS.peci);
-    peci.position.set(0, 0.36, -0.005);
-    peci.scale.set(0.96, 1, 1.12);
+    peci.position.set(0, 0.252, -0.005);
+    peci.scale.set(0.95, 1, 1.12);
     head.add(peci);
   } else if (options.hatType === 'polisi') {
     const cap = new THREE.Mesh(CHAR_GEOS.policeCap, SHARED_CHAR_MATS.policeCap);
-    cap.position.set(0, 0.365, -0.005);
+    cap.position.set(0, 0.254, -0.004);
     const brim = new THREE.Mesh(CHAR_GEOS.policeBrim, SHARED_CHAR_MATS.policeBrim);
-    brim.position.set(0, 0.315, 0.055);
+    brim.position.set(0, 0.218, 0.036);
     brim.rotation.x = 0.15;
     head.add(cap, brim);
   } else if (options.hatType === 'topi') {
@@ -1104,9 +2285,10 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
       CHAR_GEOS.topiCrown,
       new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.72 })
     );
-    topi.position.set(0, 0.255, -0.005);
+    topi.position.set(0, 0.182, -0.005);
+    topi.scale.set(0.92, 1.0, 1.06);
     const brim = new THREE.Mesh(CHAR_GEOS.policeBrim, SHARED_CHAR_MATS.policeBrim);
-    brim.position.set(0, 0.275, 0.058);
+    brim.position.set(0, 0.195, 0.038);
     brim.rotation.x = 0.12;
     head.add(topi, brim);
   } else if (options.hatType === 'helm') {
@@ -1116,14 +2298,12 @@ export function createCharacterRig(rawOptions: CharacterBuildOptions): Character
       metalness: 0.35,
     });
     const shell = new THREE.Mesh(CHAR_GEOS.helmetShell, helmMat);
-    shell.position.set(0, 0.22, -0.01);
-    shell.scale.set(1.02, 1.06, 1.06);
+    shell.position.set(0, 0.158, -0.008);
+    shell.scale.set(0.96, 1.08, 1.06);
     const visor = new THREE.Mesh(CHAR_GEOS.helmetVisor, SHARED_CHAR_MATS.visor);
-    visor.position.set(0, 0.23, 0.012);
+    visor.position.set(0, 0.165, 0.008);
     head.add(shell, visor);
   }
-
-  spineGroup.add(head);
 
   return {
     group,
@@ -1165,7 +2345,7 @@ export function applyOutfitToRig(
         : null;
 
   for (const m of rig.shirtMeshes) {
-    const mat = m.material as THREE.MeshStandardMaterial;
+    const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial;
     mat.color.setHex(cfg.shirt);
     mat.metalness = cfg.metalness;
     mat.map = map;
@@ -1177,7 +2357,7 @@ export function applyOutfitToRig(
   collarMat.needsUpdate = true;
 
   for (const p of rig.pantsMeshes) {
-    const pMat = p.material as THREE.MeshStandardMaterial;
+    const pMat = (Array.isArray(p.material) ? p.material[0] : p.material) as THREE.MeshStandardMaterial;
     pMat.color.setHex(cfg.pants);
     pMat.needsUpdate = true;
   }

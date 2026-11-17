@@ -175,6 +175,61 @@ function createRoadTextureArray(anisotropy: number): THREE.DataArrayTexture {
   return texArray;
 }
 
+function seededNoise(x: number, y: number, seed = 1337): number {
+  const n = Math.sin(x * 12.9898 + y * 78.233 + seed * 37.719) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function heightMapToNormalTexture(
+  heights: Float32Array,
+  size: number,
+  strength: number,
+  repeatX = 1,
+  repeatY = 1,
+  anisotropy = 4
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(size, size);
+  const data = img.data;
+
+  const sample = (x: number, y: number) => {
+    const wx = ((x % size) + size) % size;
+    const wy = ((y % size) + size) % size;
+    return heights[wy * size + wx];
+  };
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const l = sample(x - 1, y);
+      const r = sample(x + 1, y);
+      const u = sample(x, y - 1);
+      const d = sample(x, y + 1);
+      const dx = (l - r) * strength;
+      const dy = (u - d) * strength;
+      const dz = 1.0;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const idx = (y * size + x) * 4;
+      data[idx] = Math.round(((dx / len) * 0.5 + 0.5) * 255);
+      data[idx + 1] = Math.round(((dy / len) * 0.5 + 0.5) * 255);
+      data[idx + 2] = Math.round(((dz / len) * 0.5 + 0.5) * 255);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.anisotropy = anisotropy;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export interface ProceduralTexturePack {
   roadArray: THREE.DataArrayTexture;
   asphalt: THREE.CanvasTexture;
@@ -191,6 +246,11 @@ export interface ProceduralTexturePack {
   lurik: THREE.CanvasTexture;
   denim: THREE.CanvasTexture;
   stuccoWall: THREE.CanvasTexture;
+  skinNormal: THREE.CanvasTexture;
+  clothNormal: THREE.CanvasTexture;
+  denimNormal: THREE.CanvasTexture;
+  hairNormal: THREE.CanvasTexture;
+  eyeIris: THREE.CanvasTexture;
 }
 
 export function createProceduralTextures(maxAnisotropy: number): ProceduralTexturePack {
@@ -349,16 +409,28 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
   }
   const lurik = finalizeColorTexture(lurC, aniso, 2, 2);
 
-  // 13. Woven Denim / Chino Fabric
-  const [denC, denCtx] = createCanvas(128);
-  denCtx.fillStyle = '#cbd5e1';
-  denCtx.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 900; i++) {
-    const shade = 175 + Math.floor(Math.random() * 45);
-    denCtx.fillStyle = `rgb(${shade},${shade + 4},${shade + 10})`;
-    denCtx.fillRect(Math.random() * 128, Math.random() * 128, 2, 3);
+  // 13. Woven Denim / Chino Fabric (neutral brightness so material.color tint stays rich)
+  const [denC, denCtx] = createCanvas(256);
+  const denImg = denCtx.createImageData(256, 256);
+  const dd = denImg.data;
+  const denHeights = new Float32Array(256 * 256);
+  for (let y = 0; y < 256; y++) {
+    for (let x = 0; x < 256; x++) {
+      const twill = Math.sin((x + y) * 1.15) * 0.5 + 0.5;
+      const slub = (seededNoise(Math.floor(x * 0.5), y, 88) - 0.5) * 18;
+      const fold = Math.sin((y / 256) * Math.PI * 8 + Math.sin(x * 0.04) * 0.9) * 0.55;
+      const v = Math.max(178, Math.min(248, 212 + twill * 16 + slub + fold * 10));
+      const idx = (y * 256 + x) * 4;
+      dd[idx] = v;
+      dd[idx + 1] = v + 2;
+      dd[idx + 2] = Math.min(255, v + 6);
+      dd[idx + 3] = 255;
+      denHeights[y * 256 + x] = twill * 0.52 + fold * 0.9;
+    }
   }
+  denCtx.putImageData(denImg, 0, 0);
   const denim = finalizeColorTexture(denC, aniso, 2, 2);
+  const denimNormal = heightMapToNormalTexture(denHeights, 256, 1.8, 2, 2, aniso);
 
   // 14. Clean Architectural Plaster & Panel Facade
   const [stuC, stuCtx] = createCanvas(256);
@@ -378,6 +450,92 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
   }
   const stuccoWall = finalizeColorTexture(stuC, aniso, 2, 2);
 
+  // 15. Character Epidermal Micro-Pore Skin Normal Map
+  const skinHeights = new Float32Array(256 * 256);
+  for (let y = 0; y < 256; y++) {
+    for (let x = 0; x < 256; x++) {
+      const cx = Math.floor(x / 4);
+      const cy = Math.floor(y / 4);
+      const jx = (seededNoise(cx, cy, 3) - 0.5) * 2.0;
+      const jy = (seededNoise(cx, cy, 7) - 0.5) * 2.0;
+      const dx = (x % 4) - 2 + jx;
+      const dy = (y % 4) - 2 + jy;
+      const pore = Math.max(0, 1 - Math.hypot(dx, dy) / 1.6) * -0.35;
+      const fine = (seededNoise(x * 0.7, y * 0.7, 51) - 0.5) * 0.2;
+      skinHeights[y * 256 + x] = pore + fine;
+    }
+  }
+  const skinNormal = heightMapToNormalTexture(skinHeights, 256, 1.15, 3, 3, aniso);
+
+  // 16. Woven Cotton / Jacket Cloth Crease Normal Map
+  const clothHeights = new Float32Array(256 * 256);
+  for (let y = 0; y < 256; y++) {
+    for (let x = 0; x < 256; x++) {
+      const weave = (Math.sin(x * 1.45) * 0.5 + Math.cos(y * 1.45) * 0.5) * 0.28;
+      const drape =
+        Math.sin((x / 256) * Math.PI * 6 + Math.sin(y * 0.03) * 1.1) * 0.42 +
+        Math.sin((y / 256) * Math.PI * 4) * 0.16;
+      clothHeights[y * 256 + x] = weave + drape;
+    }
+  }
+  const clothNormal = heightMapToNormalTexture(clothHeights, 256, 1.4, 2, 2, aniso);
+
+  // 17. Directional Hair Strand Normal Map
+  const hairHeights = new Float32Array(256 * 256);
+  for (let y = 0; y < 256; y++) {
+    for (let x = 0; x < 256; x++) {
+      const strand = Math.sin(x * 1.9 + Math.sin(y * 0.08) * 2.4) * 0.55;
+      const micro = (seededNoise(x, y * 0.15, 61) - 0.5) * 0.42;
+      hairHeights[y * 256 + x] = strand + micro;
+    }
+  }
+  const hairNormal = heightMapToNormalTexture(hairHeights, 256, 1.6, 3, 2, aniso);
+
+  // 18. Detailed Human Iris + Sclera Eyeball Texture
+  const [eyeC, eyeCtx] = createCanvas(256);
+  const scleraGrad = eyeCtx.createRadialGradient(128, 128, 40, 128, 128, 128);
+  scleraGrad.addColorStop(0, '#f7f4f0');
+  scleraGrad.addColorStop(0.68, '#efe8e2');
+  scleraGrad.addColorStop(1, '#d8b4ad');
+  eyeCtx.fillStyle = scleraGrad;
+  eyeCtx.fillRect(0, 0, 256, 256);
+
+  eyeCtx.save();
+  eyeCtx.translate(128, 128);
+  const irisR = 46;
+  const irisGrad = eyeCtx.createRadialGradient(0, 0, irisR * 0.24, 0, 0, irisR);
+  irisGrad.addColorStop(0, '#5a361a');
+  irisGrad.addColorStop(0.45, '#432512');
+  irisGrad.addColorStop(0.84, '#29150a');
+  irisGrad.addColorStop(1, '#120a07');
+  eyeCtx.fillStyle = irisGrad;
+  eyeCtx.beginPath();
+  eyeCtx.arc(0, 0, irisR, 0, Math.PI * 2);
+  eyeCtx.fill();
+
+  for (let i = 0; i < 96; i++) {
+    const a = (i / 96) * Math.PI * 2;
+    const tone = seededNoise(i, 9, 42);
+    eyeCtx.strokeStyle = tone > 0.5 ? 'rgba(168, 114, 58, 0.42)' : 'rgba(34, 18, 9, 0.45)';
+    eyeCtx.lineWidth = 1.0 + tone * 0.8;
+    eyeCtx.beginPath();
+    eyeCtx.moveTo(Math.cos(a) * irisR * 0.34, Math.sin(a) * irisR * 0.34);
+    eyeCtx.lineTo(Math.cos(a + 0.02) * irisR * 0.92, Math.sin(a + 0.02) * irisR * 0.92);
+    eyeCtx.stroke();
+  }
+  eyeCtx.fillStyle = '#070606';
+  eyeCtx.beginPath();
+  eyeCtx.arc(0, 0, irisR * 0.38, 0, Math.PI * 2);
+  eyeCtx.fill();
+  eyeCtx.fillStyle = 'rgba(255, 255, 255, 0.20)';
+  eyeCtx.beginPath();
+  eyeCtx.arc(-irisR * 0.26, -irisR * 0.26, irisR * 0.11, 0, Math.PI * 2);
+  eyeCtx.fill();
+  eyeCtx.restore();
+  const eyeIris = finalizeColorTexture(eyeC, aniso, 1, 1);
+  eyeIris.wrapS = THREE.ClampToEdgeWrapping;
+  eyeIris.wrapT = THREE.ClampToEdgeWrapping;
+
   return {
     roadArray,
     asphalt,
@@ -394,5 +552,10 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     lurik,
     denim,
     stuccoWall,
+    skinNormal,
+    clothNormal,
+    denimNormal,
+    hairNormal,
+    eyeIris,
   };
 }
